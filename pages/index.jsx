@@ -1,6 +1,43 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/router";
+import Image from "next/image";
 import { SUBJECT_FILES } from "../lib/contentMap";
+import {
+  detectGuestMode,
+  getDefaultGuestQuota,
+  getGuestQuotaSnapshot,
+  incrementGuestUsage,
+  subscribeToAuthChanges,
+  AUTH_SESSION_STORAGE_KEY,
+  AUTH_STATE_EVENT,
+  broadcastAuthChange,
+} from "../lib/guestUsage";
+
+const CREDITS_PER_GENERATION = 1;
+
+const readStoredCredits = () => {
+  if (typeof window === "undefined") return 0;
+  const stored = window.localStorage.getItem("teachwiseai:credits");
+  return stored ? parseInt(stored, 10) : 0;
+};
+
+const consumeStoredCredits = (amount) => {
+  const current = readStoredCredits();
+  const nextCredits = Math.max(current - amount, 0);
+  if (typeof window !== "undefined") {
+    window.localStorage.setItem("teachwiseai:credits", nextCredits.toString());
+  }
+  return { nextCredits };
+};
+
+const startCreditPurchaseFlow = (router, isGuestUser) => {
+  // Dummy implementation
+  alert("Credit purchase not implemented");
+};
+
+const CreditCounterBadge = ({ theme, isGuestUser, guestQuota, userCredits, userEmail, onAddCredits, style }) => {
+  return null; // Dummy component
+};
 
 const GRADE_CONFIGS = [
   {
@@ -48,35 +85,11 @@ const GRADE_CONFIGS = [
 ];
 
 const GRADE_NUMBER_MAP = GRADE_CONFIGS.reduce((accumulator, config) => {
-  accumulator[config.id] = config.number;
+  if (config?.id) {
+    accumulator[config.id] = config?.number ?? config?.label ?? config.id;
+  }
   return accumulator;
 }, {});
-
-const GRADE_GROUPS = [
-  {
-    id: "higherSecondary",
-    title: "Higher Secondary",
-    subtitle: "Grade 12 and Grade 11",
-    gradeIds: ["grade12", "grade11"],
-  },
-  {
-    id: "secondary",
-    title: "Secondary",
-    subtitle: "Grades 10 to 6",
-    gradeIds: ["grade10", "grade9", "grade8", "grade7", "grade6"],
-  },
-];
-
-const SUBJECT_ACTIONS = [
-  "Syllabus",
-  "Lesson Plan",
-  "Generate presentations",
-  "Reading Materials",
-  "Generate PDF",
-  "Generate Web Page",
-  "Generate Concept Map",
-  "Generate MCQs",
-];
 
 const SUBJECT_PDF_ACTIONS = {
   grade12: {
@@ -89,40 +102,6 @@ const SUBJECT_PDF_ACTIONS = {
   grade7: {},
   grade6: {},
 };
-
-const COUNTRY_OPTIONS = [
-  { id: "india", label: "India" },
-  { id: "usa", label: "USA" },
-];
-
-const INDIA_SCHOOL_OPTIONS = [
-  { id: "cbse", label: "CBSE" },
-  { id: "stateBoards", label: "State boards" },
-];
-
-const INDIA_STATE_BOARD_OPTIONS = [
-  { id: "tamilNadu", label: "Tamil Nadu State Board" },
-  { id: "karnataka", label: "Karnataka State Board" },
-];
-
-const TAMIL_NADU_MEDIUM_OPTIONS = [{ id: "english", label: "English Medium" }];
-
-const TAMIL_NADU_ENGLISH_GRADE_OPTIONS = GRADE_CONFIGS.map((config) => ({
-  id: config.id,
-  label: config.label,
-}));
-
-const KARNATAKA_MEDIUM_OPTIONS = [{ id: "english", label: "English Medium" }];
-
-const KARNATAKA_ENGLISH_GRADE_OPTIONS = GRADE_CONFIGS.map((config) => ({
-  id: config.id,
-  label: config.label,
-}));
-
-const INDIA_COLLEGE_OPTIONS = [
-  { id: "engineering", label: "Engineering" },
-  { id: "medical", label: "Medical" },
-];
 
 function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
   const containerRef = useRef(null);
@@ -270,656 +249,153 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
 
 function Home() {
   const router = useRouter();
-  const [activeCountries, setActiveCountries] = useState({});
-  const [indiaSchoolSelections, setIndiaSchoolSelections] = useState({});
-  const [indiaStateBoardSelections, setIndiaStateBoardSelections] = useState({});
-  const [tamilNaduMediumSelections, setTamilNaduMediumSelections] = useState({});
-  const [tamilNaduEnglishGradeSelections, setTamilNaduEnglishGradeSelections] = useState({});
-  const [karnatakaMediumSelections, setKarnatakaMediumSelections] = useState({});
-  const [karnatakaEnglishGradeSelections, setKarnatakaEnglishGradeSelections] = useState({});
-  const [indiaCollegeSelections, setIndiaCollegeSelections] = useState({});
-  const [isDarkMode, setIsDarkMode] = useState(false);
 
-  useEffect(() => {
-    router.prefetch("/cbse");
-    router.prefetch("/tamil-nadu");
-    router.prefetch("/karnataka");
-  }, [router]);
-
-  const toggleCountry = (countryId) => {
-    setActiveCountries((previous) => {
-      const nextState = {
-        ...previous,
-        [countryId]: !previous[countryId],
-      };
-
-      if (countryId === "india" && previous[countryId]) {
-        setIndiaSchoolSelections({});
-        setIndiaStateBoardSelections({});
-        setTamilNaduMediumSelections({});
-        setTamilNaduEnglishGradeSelections({});
-        setKarnatakaMediumSelections({});
-        setKarnatakaEnglishGradeSelections({});
-        setIndiaCollegeSelections({});
-      }
-
-      return nextState;
-    });
+  const handleSignInClick = () => {
+    router.push("/login");
   };
-
-  const toggleIndiaSchoolOption = (optionId) => {
-    setIndiaSchoolSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = {
-        ...previous,
-        [optionId]: nextValue,
-      };
-
-      if (!nextValue) {
-        delete updated[optionId];
-      }
-
-      if (optionId === "stateBoards" && !nextValue) {
-        setIndiaStateBoardSelections({});
-        setTamilNaduMediumSelections({});
-        setTamilNaduEnglishGradeSelections({});
-        setKarnatakaMediumSelections({});
-        setKarnatakaEnglishGradeSelections({});
-      }
-
-      if (optionId === "cbse" && nextValue) {
-        router.push("/cbse");
-      }
-
-      return updated;
-    });
-  };
-
-  const toggleIndiaStateBoardOption = (optionId) => {
-    setIndiaStateBoardSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = {
-        ...previous,
-        [optionId]: nextValue,
-      };
-
-      if (!nextValue) {
-        delete updated[optionId];
-        if (optionId === "tamilNadu") {
-          setTamilNaduMediumSelections({});
-          setTamilNaduEnglishGradeSelections({});
-        }
-        if (optionId === "karnataka") {
-          setKarnatakaMediumSelections({});
-          setKarnatakaEnglishGradeSelections({});
-        }
-      }
-
-      return updated;
-    });
-  };
-
-  const toggleTamilNaduMediumOption = (optionId) => {
-    setTamilNaduMediumSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = {
-        ...previous,
-        [optionId]: nextValue,
-      };
-
-      if (!nextValue) {
-        delete updated[optionId];
-        setTamilNaduEnglishGradeSelections({});
-      }
-
-      return updated;
-    });
-  };
-
-  const toggleTamilNaduEnglishGradeOption = (optionId) => {
-    setTamilNaduEnglishGradeSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = { ...previous };
-
-      if (nextValue) {
-        updated[optionId] = true;
-        router.push({
-          pathname: "/tamil-nadu",
-          query: {
-            medium: "english",
-            grade: optionId,
-          },
-        });
-      } else {
-        delete updated[optionId];
-      }
-
-      return updated;
-    });
-  };
-
-  const toggleKarnatakaMediumOption = (optionId) => {
-    setKarnatakaMediumSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = {
-        ...previous,
-        [optionId]: nextValue,
-      };
-
-      if (!nextValue) {
-        delete updated[optionId];
-        setKarnatakaEnglishGradeSelections({});
-      } else if (optionId !== "english") {
-        setKarnatakaEnglishGradeSelections({});
-      }
-
-      return updated;
-    });
-  };
-
-  const toggleKarnatakaEnglishGradeOption = (optionId) => {
-    setKarnatakaEnglishGradeSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = { ...previous };
-
-      if (nextValue) {
-        updated[optionId] = true;
-        router.push({
-          pathname: "/karnataka",
-          query: {
-            medium: "english",
-            grade: optionId,
-          },
-        });
-      } else {
-        delete updated[optionId];
-      }
-
-      return updated;
-    });
-  };
-
-  const toggleIndiaCollegeOption = (optionId) => {
-    setIndiaCollegeSelections((previous) => {
-      const nextValue = !previous[optionId];
-      const updated = {
-        ...previous,
-        [optionId]: nextValue,
-      };
-
-      if (!nextValue) {
-        delete updated[optionId];
-      }
-
-      return updated;
-    });
-  };
-
-  const theme = isDarkMode
-    ? {
-        appBackground: "#0f172a",
-        panel: "#111827",
-        text: "#e2e8f0",
-        accent: "#38bdf8",
-        border: "#1f2937",
-        secondaryText: "#cbd5f5",
-      }
-    : {
-        appBackground: "#f1f5f9",
-        panel: "#ffffff",
-        text: "#0f172a",
-        accent: "#2563eb",
-        border: "#cbd5f5",
-        secondaryText: "#475569",
-      };
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: theme.appBackground,
-        padding: "40px 16px",
-      }}
-    >
-      <div
-        style={{
-          width: "min(480px, 100%)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-          background: theme.panel,
-          color: theme.text,
-          borderRadius: "18px",
-          padding: "32px",
-          boxShadow: "0 22px 44px rgba(15, 23, 42, 0.08)",
-          position: "relative",
-        }}
-      >
-        <button
-          type="button"
-          onClick={() => setIsDarkMode((previous) => !previous)}
-          aria-label={`Switch to ${isDarkMode ? "light" : "dark"} mode`}
+    <main>
+      <div>
+        <div
           style={{
-            position: "absolute",
-            top: "18px",
-            right: "18px",
-            display: "flex",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+            gap: "48px",
             alignItems: "center",
-            gap: "10px",
-            padding: "6px 16px",
-            borderRadius: "9999px",
-            border: `1px solid ${theme.border}`,
-            background: isDarkMode ? "rgba(56, 189, 248, 0.1)" : "#e0f2fe",
-            color: theme.text,
-            fontWeight: 600,
-            cursor: "pointer",
           }}
         >
-          <span>{isDarkMode ? "Dark" : "Light"}</span>
-          <span
-            style={{
-              display: "inline-block",
-              width: "38px",
-              height: "20px",
-              borderRadius: "9999px",
-              background: isDarkMode ? theme.accent : "#bfdbfe",
-              position: "relative",
-              border: `1px solid ${theme.border}`,
-            }}
-          >
-            <span
-              style={{
-                position: "absolute",
-                top: "2px",
-                left: isDarkMode ? "20px" : "2px",
-                width: "14px",
-                height: "14px",
-                borderRadius: "50%",
-                background: isDarkMode ? "#0f172a" : "#ffffff",
-                transition: "left 0.2s ease",
-              }}
-            />
-          </span>
-        </button>
-
-        <h1
-          style={{
-            margin: 0,
-            textAlign: "center",
-            color: theme.text,
-            fontSize: "1.9rem",
-          }}
-        >
-          Welcome to teachwiseai.mpaiapps.com
-        </h1>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-          <span
-            style={{
-              fontSize: "1rem",
-              fontWeight: 600,
-              color: theme.text,
-            }}
-          >
-            Countries
-          </span>
-
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              paddingLeft: "6px",
-            }}
-          >
-            {COUNTRY_OPTIONS.map((country) => (
-              <div
-                key={country.id}
-                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-              >
-                <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(activeCountries[country.id])}
-                    onChange={() => toggleCountry(country.id)}
-                    style={{ accentColor: theme.accent, transform: "scale(1.05)" }}
-                  />
-                  <span style={{ fontWeight: 600, color: theme.text }}>{country.label}</span>
-                </label>
-
-                {country.id === "india" && activeCountries.india ? (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: "10px",
-                      paddingLeft: "26px",
-                    }}
-                  >
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <span style={{ fontWeight: 500, color: theme.text }}>Schools</span>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "6px",
-                          paddingLeft: "20px",
-                        }}
-                      >
-                        {INDIA_SCHOOL_OPTIONS.map((schoolOption) => {
-                          const isSelected = Boolean(indiaSchoolSelections[schoolOption.id]);
-
-                          return (
-                            <div
-                              key={schoolOption.id}
-                              style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                            >
-                              <label
-                                style={{ display: "flex", alignItems: "center", gap: "8px" }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleIndiaSchoolOption(schoolOption.id)}
-                                  style={{ accentColor: theme.accent, transform: "scale(1.02)" }}
-                                />
-                                <span style={{ fontWeight: 500, color: theme.text }}>
-                                  {schoolOption.label}
-                                </span>
-                              </label>
-
-                              {schoolOption.id === "stateBoards" && isSelected ? (
-                                <div
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: "6px",
-                                    paddingLeft: "28px",
-                                  }}
-                                >
-                                  {INDIA_STATE_BOARD_OPTIONS.map((boardOption) => {
-                                    const isBoardSelected = Boolean(
-                                      indiaStateBoardSelections[boardOption.id],
-                                    );
-
-                                    let mediumOptions = null;
-
-                                    if (boardOption.id === "tamilNadu" && isBoardSelected) {
-                                      mediumOptions = (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: "6px",
-                                            paddingLeft: "24px",
-                                          }}
-                                        >
-                                          {TAMIL_NADU_MEDIUM_OPTIONS.map((mediumOption) => {
-                                            const isMediumSelected = Boolean(
-                                              tamilNaduMediumSelections[mediumOption.id],
-                                            );
-
-                                            return (
-                                              <div
-                                                key={mediumOption.id}
-                                                style={{
-                                                  display: "flex",
-                                                  flexDirection: "column",
-                                                  gap: "6px",
-                                                }}
-                                              >
-                                                <label
-                                                  style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: "8px",
-                                                  }}
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={isMediumSelected}
-                                                    onChange={() =>
-                                                      toggleTamilNaduMediumOption(mediumOption.id)
-                                                    }
-                                                    style={{
-                                                      accentColor: theme.accent,
-                                                      transform: "scale(1.0)",
-                                                    }}
-                                                  />
-                                                  <span style={{ fontWeight: 500, color: theme.text }}>
-                                                    {mediumOption.label}
-                                                  </span>
-                                                </label>
-
-                                                {isMediumSelected ? (
-                                                  <div
-                                                    style={{
-                                                      display: "flex",
-                                                      flexDirection: "column",
-                                                      gap: "6px",
-                                                      paddingLeft: "24px",
-                                                    }}
-                                                  >
-                                                    {TAMIL_NADU_ENGLISH_GRADE_OPTIONS.map((gradeOption) => (
-                                                      <label
-                                                        key={gradeOption.id}
-                                                        style={{
-                                                          display: "flex",
-                                                          alignItems: "center",
-                                                          gap: "8px",
-                                                        }}
-                                                      >
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={Boolean(
-                                                            tamilNaduEnglishGradeSelections[
-                                                              gradeOption.id
-                                                            ],
-                                                          )}
-                                                          onChange={() =>
-                                                            toggleTamilNaduEnglishGradeOption(
-                                                              gradeOption.id,
-                                                            )
-                                                          }
-                                                          style={{
-                                                            accentColor: theme.accent,
-                                                            transform: "scale(0.98)",
-                                                          }}
-                                                        />
-                                                        <span
-                                                          style={{ fontWeight: 500, color: theme.text }}
-                                                        >
-                                                          {gradeOption.label}
-                                                        </span>
-                                                      </label>
-                                                    ))}
-                                                  </div>
-                                                ) : null}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      );
-                                    }
-
-                                    if (boardOption.id === "karnataka" && isBoardSelected) {
-                                      mediumOptions = (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            flexDirection: "column",
-                                            gap: "6px",
-                                            paddingLeft: "24px",
-                                          }}
-                                        >
-                                          {KARNATAKA_MEDIUM_OPTIONS.map((mediumOption) => {
-                                            const isMediumSelected = Boolean(
-                                              karnatakaMediumSelections[mediumOption.id],
-                                            );
-
-                                            return (
-                                              <div
-                                                key={mediumOption.id}
-                                                style={{
-                                                  display: "flex",
-                                                  flexDirection: "column",
-                                                  gap: "6px",
-                                                }}
-                                              >
-                                                <label
-                                                  style={{
-                                                    display: "flex",
-                                                    alignItems: "center",
-                                                    gap: "8px",
-                                                  }}
-                                                >
-                                                  <input
-                                                    type="checkbox"
-                                                    checked={isMediumSelected}
-                                                    onChange={() =>
-                                                      toggleKarnatakaMediumOption(mediumOption.id)
-                                                    }
-                                                    style={{
-                                                      accentColor: theme.accent,
-                                                      transform: "scale(1.0)",
-                                                    }}
-                                                  />
-                                                  <span style={{ fontWeight: 500, color: theme.text }}>
-                                                    {mediumOption.label}
-                                                  </span>
-                                                </label>
-
-                                                {isMediumSelected ? (
-                                                  <div
-                                                    style={{
-                                                      display: "flex",
-                                                      flexDirection: "column",
-                                                      gap: "6px",
-                                                      paddingLeft: "24px",
-                                                    }}
-                                                  >
-                                                    {KARNATAKA_ENGLISH_GRADE_OPTIONS.map((gradeOption) => (
-                                                      <label
-                                                        key={gradeOption.id}
-                                                        style={{
-                                                          display: "flex",
-                                                          alignItems: "center",
-                                                          gap: "8px",
-                                                        }}
-                                                      >
-                                                        <input
-                                                          type="checkbox"
-                                                          checked={Boolean(
-                                                            karnatakaEnglishGradeSelections[
-                                                              gradeOption.id
-                                                            ],
-                                                          )}
-                                                          onChange={() =>
-                                                            toggleKarnatakaEnglishGradeOption(
-                                                              gradeOption.id,
-                                                            )
-                                                          }
-                                                          style={{
-                                                            accentColor: theme.accent,
-                                                            transform: "scale(0.98)",
-                                                          }}
-                                                        />
-                                                        <span
-                                                          style={{ fontWeight: 500, color: theme.text }}
-                                                        >
-                                                          {gradeOption.label}
-                                                        </span>
-                                                      </label>
-                                                    ))}
-                                                  </div>
-                                                ) : null}
-                                              </div>
-                                            );
-                                          })}
-                                        </div>
-                                      );
-                                    }
-
-                                    return (
-                                      <div
-                                        key={boardOption.id}
-                                        style={{
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "6px",
-                                        }}
-                                      >
-                                        <label
-                                          style={{
-                                            display: "flex",
-                                            alignItems: "center",
-                                            gap: "8px",
-                                          }}
-                                        >
-                                          <input
-                                            type="checkbox"
-                                            checked={isBoardSelected}
-                                            onChange={() => toggleIndiaStateBoardOption(boardOption.id)}
-                                            style={{ accentColor: theme.accent, transform: "scale(1.01)" }}
-                                          />
-                                          <span style={{ fontWeight: 500, color: theme.text }}>
-                                            {boardOption.label}
-                                          </span>
-                                        </label>
-
-                                        {mediumOptions}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-                      <span style={{ fontWeight: 500, color: theme.text }}>Colleges</span>
-                      <div
-                        style={{
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: "6px",
-                          paddingLeft: "20px",
-                        }}
-                      >
-                        {INDIA_COLLEGE_OPTIONS.map((collegeOption) => (
-                          <label
-                            key={collegeOption.id}
-                            style={{ display: "flex", alignItems: "center", gap: "8px" }}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={Boolean(indiaCollegeSelections[collegeOption.id])}
-                              onChange={() => toggleIndiaCollegeOption(collegeOption.id)}
-                              style={{ accentColor: theme.accent, transform: "scale(1.02)" }}
-                            />
-                            <span style={{ fontWeight: 500, color: theme.text }}>
-                              {collegeOption.label}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                <span
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
+                    background: "rgba(56, 189, 248, 0.18)",
+                    color: "#0f172a",
+                    padding: "8px 18px",
+                    borderRadius: "9999px",
+                    fontWeight: 600,
+                    fontSize: "0.9rem",
+                    width: "fit-content",
+                    letterSpacing: "0.08em",
+                  }}
+                >
+                  Teachwise AI
+                </span>
+                <h1
+                  style={{
+                    fontSize: "clamp(2.3rem, 4vw, 3rem)",
+                    margin: 0,
+                    fontWeight: 700,
+                    color: "#0f172a",
+                  }}
+                >
+                  AI Solutions for Smarter Teaching
+                </h1>
+                <p
+                  style={{
+                    margin: 0,
+                    fontSize: "1.05rem",
+                    lineHeight: 1.8,
+                    color: "#1f2937",
+                    maxWidth: "540px",
+                  }}
+                >
+                  Streamline lesson planning, automate exam preparation, and gain insights into
+                  student progress&mdash;all with Teachwise AI.
+                </p>
               </div>
-            ))}
+
+              <blockquote
+                style={{
+                  margin: 0,
+                  paddingLeft: "16px",
+                  borderLeft: "3px solid rgba(94, 234, 212, 0.6)",
+                  color: "#475569",
+                  fontSize: "0.95rem",
+                  lineHeight: 1.7,
+                  maxWidth: "560px",
+                }}
+              >
+                “A good teacher can inspire hope, ignite the imagination, and instill a love of
+                learning.” — Brad Henry
+              </blockquote>
+            </div>
+
+            <div
+              style={{
+                position: "relative",
+                width: "100%",
+                borderRadius: "32px",
+                overflow: "hidden",
+                boxShadow: "0 32px 60px rgba(15, 23, 42, 0.45)",
+              }}
+            >
+              <Image
+                src="/images/classroom-hero.jpg"
+                alt="Teacher guiding students in a classroom"
+                width={1200}
+                height={900}
+                priority
+                style={{
+                  width: "100%",
+                  height: "auto",
+                  display: "block",
+                }}
+              />
+            </div>
           </div>
         </div>
-      </div>
-    </main>
+
+        <div
+          style={{
+            width: "min(1120px, 100%)",
+            marginTop: "32px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "16px",
+            alignItems: "flex-start",
+          }}
+        >
+          <span
+            style={{
+              color: "#0ea5e9",
+              fontWeight: 700,
+              fontSize: "1.05rem",
+              letterSpacing: "0.03em",
+            }}
+          >
+            Get started for free
+          </span>
+          <button
+            type="button"
+            onClick={handleSignInClick}
+            style={{
+              padding: "10px 20px",
+              borderRadius: "24px",
+              border: "1px solid rgba(59, 130, 246, 0.65)",
+              background: "rgba(59, 130, 246, 0.12)",
+              color: "#1d4ed8",
+              fontWeight: 600,
+              fontSize: "0.9rem",
+              letterSpacing: "0.03em",
+              cursor: "pointer",
+              boxShadow: "none",
+              minWidth: "140px",
+              alignSelf: "flex-start",
+            }}
+          >
+            Sign in
+          </button>
+        </div>
+      </main>
   );
 }
+// End of Home component
+
+
 
 export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const router = useRouter();
@@ -960,6 +436,16 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const [mcqError, setMcqError] = useState({});
   const [mcqTopics, setMcqTopics] = useState({});
   const [mcqHistory, setMcqHistory] = useState({});
+  const initialGuestMode = detectGuestMode();
+  const [isGuestUser, setIsGuestUser] = useState(initialGuestMode);
+  const [guestQuota, setGuestQuota] = useState(() => getGuestQuotaSnapshot());
+  const [userCredits, setUserCredits] = useState(() =>
+    initialGuestMode ? null : readStoredCredits(),
+  );
+  const [userEmail, setUserEmail] = useState(() =>
+    initialGuestMode ? null : readStoredEmail(),
+  );
+  const [authLoading, setAuthLoading] = useState(true);
 
   const gradeControls = {
     grade12: { isActive: grade12, setActive: setGrade12 },
@@ -995,8 +481,102 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     });
   }, [router.isReady, router.query.grade]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      setAuthLoading(false);
+      return () => {};
+    }
+
+    setIsGuestUser(detectGuestMode());
+    setAuthLoading(false);
+
+    const unsubscribe = subscribeToAuthChanges((guestMode) => {
+      setIsGuestUser(guestMode);
+      setAuthLoading(false);
+    });
+
+    return unsubscribe;
+  }, []);
+
+  useEffect(() => {
+    if (isGuestUser) {
+      setGuestQuota(getGuestQuotaSnapshot());
+    } else {
+      setGuestQuota(getDefaultGuestQuota());
+    }
+  }, [isGuestUser]);
+
+  useEffect(() => {
+    if (isGuestUser) {
+      setUserCredits(null);
+      setUserEmail(null);
+      return;
+    }
+
+    setUserCredits(readStoredCredits());
+    setUserEmail(readStoredEmail());
+  }, [isGuestUser]);
+
+  useEffect(() => {
+    const syncCredits = () => {
+      setUserCredits(readStoredCredits());
+      setUserEmail(readStoredEmail());
+    };
+
+    syncCredits();
+
+    if (typeof window === "undefined") {
+      return () => {};
+    }
+
+    window.addEventListener("storage", syncCredits);
+    window.addEventListener(AUTH_STATE_EVENT, syncCredits);
+
+    return () => {
+      window.removeEventListener("storage", syncCredits);
+      window.removeEventListener(AUTH_STATE_EVENT, syncCredits);
+    };
+  }, []);
+
+  const handleAddCreditsRequest = () => {
+    startCreditPurchaseFlow(router, isGuestUser);
+  };
+
+  useEffect(() => {
+    if (!router.isReady || authLoading) {
+      return;
+    }
+
+    const hasAuthTokens =
+      typeof window !== "undefined" &&
+      ((window.location.search && window.location.search.includes("access_token=")) ||
+        (window.location.hash && window.location.hash.includes("access_token=")));
+
+    if (!hasAuthTokens && isGuestUser) {
+      router.replace("/login");
+    }
+  }, [authLoading, isGuestUser, router]);
+
   const getSubjectKey = (gradeId, subject) => `${gradeId}::${subject}`;
   const getActionKey = (gradeId, subject, action) => `${gradeId}::${subject}::${action}`;
+
+  const handleGenerationConsumption = () => {
+    if (isGuestUser) {
+      const updatedQuota = incrementGuestUsage();
+      setGuestQuota(updatedQuota);
+      return;
+    }
+
+    const { nextCredits } = consumeStoredCredits(CREDITS_PER_GENERATION);
+    setUserCredits((previous) => {
+      if (typeof nextCredits === "number") {
+        return nextCredits;
+      }
+
+      const baseline = typeof previous === "number" ? previous : 0;
+      return Math.max(baseline - CREDITS_PER_GENERATION, 0);
+    });
+  };
 
   const fetchPdfContent = async (gradeId, subject, action) => {
     const cacheKey = getActionKey(gradeId, subject, action);
@@ -1269,11 +849,25 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   };
 
   const triggerPresentationDownload = async (gradeId, subject, topic) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
 
     if (!topic) {
       setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
       return;
     }
 
@@ -1321,6 +915,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
       }));
 
+      handleGenerationConsumption();
+
       setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
     } catch (error) {
       setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "error" }));
@@ -1331,12 +927,40 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     }
   };
 
+  // Reads the stored user email from localStorage
+const readStoredEmail = () => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const email = window.localStorage.getItem("teachwiseai:email");
+    return email || null;
+  } catch (error) {
+    console.error("Failed to4 read stored email:", error);
+    return null;
+  }
+};
+
+
   const triggerHandoutDownload = async (gradeId, subject, topic) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
 
     if (!topic) {
       setHandoutStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      setHandoutStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      setHandoutStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
       return;
     }
 
@@ -1382,6 +1006,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
       }));
 
+      handleGenerationConsumption();
+
       setHandoutStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
     } catch (error) {
       setHandoutStatus((prev) => ({ ...prev, [subjectKey]: "error" }));
@@ -1393,11 +1019,25 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   };
 
   const triggerLessonPlanDownload = async (gradeId, subject, topic) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
 
     if (!topic) {
       setLessonPlanStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      setLessonPlanStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      setLessonPlanStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
       return;
     }
 
@@ -1443,6 +1083,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
       }));
 
+      handleGenerationConsumption();
+
       setLessonPlanStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
     } catch (error) {
       setLessonPlanStatus((prev) => ({ ...prev, [subjectKey]: "error" }));
@@ -1454,11 +1096,25 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   };
 
   const triggerWebPageDownload = async (gradeId, subject, topic) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
 
     if (!topic) {
       setWebPageStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      setWebPageStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      setWebPageStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
       return;
     }
 
@@ -1503,6 +1159,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
       }));
 
+      handleGenerationConsumption();
+
       setWebPageStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
     } catch (error) {
       setWebPageStatus((prev) => ({ ...prev, [subjectKey]: "error" }));
@@ -1514,11 +1172,25 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   };
 
   const triggerConceptMapDownload = async (gradeId, subject, topic) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
 
     if (!topic) {
       setConceptMapStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      setConceptMapStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      setConceptMapStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
       return;
     }
 
@@ -1565,6 +1237,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
       }));
 
+      handleGenerationConsumption();
+
       setConceptMapStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
     } catch (error) {
       setConceptMapStatus((prev) => ({ ...prev, [subjectKey]: "error" }));
@@ -1576,11 +1250,25 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   };
 
   const triggerMcqDownload = async (gradeId, subject, topic) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
 
     if (!topic) {
       setMcqStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      setMcqStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      setMcqStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
       return;
     }
 
@@ -1626,6 +1314,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         ...prev,
         [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
       }));
+
+      handleGenerationConsumption();
 
       setMcqStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
     } catch (error) {
@@ -1911,6 +1601,12 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         accent: "#2563eb",
         isDark: false,
       };
+  const guestLimitMessage = "Guest limit reached.";
+  const noCreditsMessage = `You need at least ${CREDITS_PER_GENERATION} credits to generate.`;
+  const guestLimitReached = isGuestUser && guestQuota.remaining <= 0;
+  const effectiveCredits = typeof userCredits === "number" ? userCredits : 0;
+  const isOutOfCredits = effectiveCredits < CREDITS_PER_GENERATION;
+  const shouldDisableGeneration = guestLimitReached || (!isGuestUser && isOutOfCredits);
 
   return (
     <div
@@ -1930,6 +1626,15 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         textAlign: "center",
       }}
     >
+      <CreditCounterBadge
+        theme={theme}
+        isGuestUser={isGuestUser}
+        guestQuota={guestQuota}
+        userCredits={userCredits}
+        userEmail={userEmail}
+        onAddCredits={handleAddCreditsRequest}
+        style={{ top: "24px" }}
+      />
       <button
         type="button"
         onClick={() => setIsDarkMode(!isDarkMode)}
@@ -2023,6 +1728,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
       >
         {boardLabel}
       </h2>
+
+
 
       {/* Checkboxes */}
       <div
@@ -2268,7 +1975,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             fontWeight: 600,
                                             cursor: "pointer",
                                           }}
-                                          disabled={presentationState === "loading"}
+                                          disabled={presentationState === "loading" || shouldDisableGeneration}
                                         >
                                           {presentationState === "loading"
                                             ? "Generating..."
@@ -2295,6 +2002,26 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           Unable to generate presentation: {presentationErrorMessage ?? "Unknown error"}
                                         </span>
                                       )}
+                                      {presentationState === "quota-exceeded" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {presentationState === "no-credits" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {noCreditsMessage}
+                                        </span>
+                                      )}
                                       {presentationState === "success" && (
                                         <span
                                           style={{
@@ -2312,7 +2039,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.isDark ? "#94a3b8" : "#475569",
                                           }}
                                         >
-                                          Type a topic and click Generate to download a PPTX.
+                                          Ready to generate when you are.
                                         </span>
                                       )}
                                       {recentTopics.length > 0 && (
@@ -2351,7 +2078,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                                 fontSize: "0.78rem",
                                                 cursor: "pointer",
                                               }}
-                                              disabled={presentationState === "loading"}
+                                              disabled={presentationState === "loading" || shouldDisableGeneration}
                                             >
                                               {recentTopic}
                                             </button>
@@ -2449,6 +2176,26 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           Unable to generate PDF: {handoutErrorMessage ?? "Unknown error"}
                                         </span>
                                       )}
+                                      {handoutState === "quota-exceeded" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {handoutState === "no-credits" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {noCreditsMessage}
+                                        </span>
+                                      )}
                                       {handoutState === "success" && (
                                         <span
                                           style={{
@@ -2466,7 +2213,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.isDark ? "#94a3b8" : "#475569",
                                           }}
                                         >
-                                          Type a topic and click Generate to download a PDF handout.
+                                          Ready to generate when you are.
                                         </span>
                                       )}
                                       {handoutRecent.length > 0 && (
@@ -2505,7 +2252,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                                 fontSize: "0.78rem",
                                                 cursor: "pointer",
                                               }}
-                                              disabled={handoutState === "loading"}
+                                              disabled={handoutState === "loading" || shouldDisableGeneration}
                                             >
                                               {recentTopic}
                                             </button>
@@ -2576,7 +2323,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             fontWeight: 600,
                                             cursor: "pointer",
                                           }}
-                                          disabled={lessonPlanState === "loading"}
+                                          disabled={lessonPlanState === "loading" || shouldDisableGeneration}
                                         >
                                           {lessonPlanState === "loading"
                                             ? "Generating..."
@@ -2603,6 +2350,26 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           Unable to generate lesson plan: {lessonPlanErrorMessage ?? "Unknown error"}
                                         </span>
                                       )}
+                                      {lessonPlanState === "quota-exceeded" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {lessonPlanState === "no-credits" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {noCreditsMessage}
+                                        </span>
+                                      )}
                                       {lessonPlanState === "success" && (
                                         <span
                                           style={{
@@ -2620,7 +2387,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.isDark ? "#94a3b8" : "#475569",
                                           }}
                                         >
-                                          Type a topic and click Generate to download a lesson plan PDF.
+                                          Ready to generate when you are.
                                         </span>
                                       )}
                                       {lessonPlanRecent.length > 0 && (
@@ -2659,7 +2426,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                                 fontSize: "0.78rem",
                                                 cursor: "pointer",
                                               }}
-                                              disabled={lessonPlanState === "loading"}
+                                              disabled={lessonPlanState === "loading" || shouldDisableGeneration}
                                             >
                                               {recentTopic}
                                             </button>
@@ -2730,7 +2497,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             fontWeight: 600,
                                             cursor: "pointer",
                                           }}
-                                          disabled={webPageState === "loading"}
+                                          disabled={webPageState === "loading" || shouldDisableGeneration}
                                         >
                                           {webPageState === "loading" ? "Generating..." : "Generate"}
                                         </button>
@@ -2755,6 +2522,26 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           Unable to generate web page: {webPageErrorMessage ?? "Unknown error"}
                                         </span>
                                       )}
+                                      {webPageState === "quota-exceeded" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {webPageState === "no-credits" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {noCreditsMessage}
+                                        </span>
+                                      )}
                                       {webPageState === "success" && (
                                         <span
                                           style={{
@@ -2772,7 +2559,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.isDark ? "#94a3b8" : "#475569",
                                           }}
                                         >
-                                          Type a topic and click Generate to download an HTML web page.
+                                          Ready to generate when you are.
                                         </span>
                                       )}
                                       {webPageRecent.length > 0 && (
@@ -2811,7 +2598,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                                 fontSize: "0.78rem",
                                                 cursor: "pointer",
                                               }}
-                                              disabled={webPageState === "loading"}
+                                              disabled={webPageState === "loading" || shouldDisableGeneration}
                                             >
                                               {recentTopic}
                                             </button>
@@ -2882,7 +2669,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             fontWeight: 600,
                                             cursor: "pointer",
                                           }}
-                                          disabled={conceptMapState === "loading"}
+                                          disabled={conceptMapState === "loading" || shouldDisableGeneration}
                                         >
                                           {conceptMapState === "loading"
                                             ? "Generating..."
@@ -2909,6 +2696,26 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           Unable to generate concept map: {conceptMapErrorMessage ?? "Unknown error"}
                                         </span>
                                       )}
+                                      {conceptMapState === "quota-exceeded" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {conceptMapState === "no-credits" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {noCreditsMessage}
+                                        </span>
+                                      )}
                                       {conceptMapState === "success" && (
                                         <span
                                           style={{
@@ -2926,7 +2733,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.isDark ? "#94a3b8" : "#475569",
                                           }}
                                         >
-                                          Type a topic and click Generate to download a concept map PDF.
+                                          Ready to generate when you are.
                                         </span>
                                       )}
                                       {conceptMapRecent.length > 0 && (
@@ -2965,7 +2772,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                                 fontSize: "0.78rem",
                                                 cursor: "pointer",
                                               }}
-                                              disabled={conceptMapState === "loading"}
+                                              disabled={conceptMapState === "loading" || shouldDisableGeneration}
                                             >
                                               {recentTopic}
                                             </button>
@@ -3061,6 +2868,26 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           Unable to generate MCQs: {mcqErrorMessage ?? "Unknown error"}
                                         </span>
                                       )}
+                                      {mcqState === "quota-exceeded" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {mcqState === "no-credits" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: "#f87171",
+                                          }}
+                                        >
+                                          {noCreditsMessage}
+                                        </span>
+                                      )}
                                       {mcqState === "success" && (
                                         <span
                                           style={{
@@ -3078,7 +2905,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.isDark ? "#94a3b8" : "#475569",
                                           }}
                                         >
-                                          Type a topic and click Generate to download a multiple-choice practice PDF.
+                                          Ready to generate when you are.
                                         </span>
                                       )}
                                       {mcqRecent.length > 0 && (
@@ -3117,7 +2944,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                                 fontSize: "0.78rem",
                                                 cursor: "pointer",
                                               }}
-                                              disabled={mcqState === "loading"}
+                                              disabled={mcqState === "loading" || shouldDisableGeneration}
                                             >
                                               {recentTopic}
                                             </button>
