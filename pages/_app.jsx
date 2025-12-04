@@ -9,6 +9,8 @@ import {
 } from "../lib/guestUsage";
 
 const GENERAL_USERS_STORAGE_KEY = "teachwiseai:generalUsers";
+const USER_CREDITS_STORAGE_KEY = "teachwiseai:credits";
+const USER_EMAIL_STORAGE_KEY = "teachwiseai:email";
 
 const INITIAL_SIGN_IN_CREDITS = 100;
 
@@ -107,6 +109,22 @@ const normalizeCreditsValue = (value) => {
   return Math.max(0, Math.round(numeric));
 };
 
+const readLocalCreditBalance = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(USER_CREDITS_STORAGE_KEY);
+    if (raw === null || raw === undefined) {
+      return null;
+    }
+    return normalizeCreditsValue(raw);
+  } catch (error) {
+    return null;
+  }
+};
+
 const readStoredSession = () => {
   if (typeof window === "undefined") {
     return null;
@@ -137,10 +155,11 @@ function persistSessionInStorage(session) {
     );
     const storedCredits = normalizeCreditsValue(storedSession?.user?.credits);
     const generalCredits = getGeneralUserCredits(session.user?.email);
+    const localCredits = readLocalCreditBalance();
 
     // Default to starter credits when a user signs in for the first time.
     const resolvedCredits = (() => {
-      const candidates = [credits, storedCredits, generalCredits];
+      const candidates = [localCredits, generalCredits, credits, storedCredits];
       for (let index = 0; index < candidates.length; index += 1) {
         const candidate = candidates[index];
         if (candidate !== null && candidate !== undefined) {
@@ -164,6 +183,10 @@ function persistSessionInStorage(session) {
 
     try {
       window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(payload));
+      window.localStorage.setItem(USER_CREDITS_STORAGE_KEY, String(resolvedCredits));
+      if (session.user?.email) {
+        window.localStorage.setItem(USER_EMAIL_STORAGE_KEY, session.user.email);
+      }
     } catch (error) {
       // eslint-disable-next-line no-console
       console.warn("Unable to persist auth session", error);
@@ -174,6 +197,8 @@ function persistSessionInStorage(session) {
     }
   } else {
     window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(USER_CREDITS_STORAGE_KEY);
+    window.localStorage.removeItem(USER_EMAIL_STORAGE_KEY);
     clearActiveSession();
   }
 

@@ -42,6 +42,36 @@ const sanitizeEmailValue = (value) => {
   return value.trim();
 };
 
+const readStoredAdminAccessToken = () => {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    return parsed?.accessToken || parsed?.access_token || null;
+  } catch (error) {
+    return null;
+  }
+};
+
+const persistGeneralUsersEntries = (entries) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(GENERAL_USERS_STORAGE_KEY, JSON.stringify(entries));
+  } catch (error) {
+    // Ignore localStorage write issues (e.g., quota exceeded).
+  }
+};
+
 const parseStoredGeneralUsers = (rawValue) => {
   if (!Array.isArray(rawValue)) {
     return [];
@@ -111,6 +141,7 @@ export default function AdminPage() {
   const [generalUsersMessageTone, setGeneralUsersMessageTone] = useState("info");
   const [isSignedIn, setIsSignedIn] = useState(false);
   const [adminProfile, setAdminProfile] = useState(defaultAdminProfile);
+  const [isProcessingCredits, setIsProcessingCredits] = useState(false);
 
   const addGeneralInputRef = useRef(null);
 
@@ -400,7 +431,31 @@ export default function AdminPage() {
     }
   };
 
-  const handleAddCredits = () => {
+  const upsertGeneralUserEntry = (email, credits) => {
+    const normalizedEmail = normalizeString(email);
+    let persistedEntries = [];
+
+    setGeneralUsers((previous) => {
+      const base = Array.isArray(previous) ? [...previous] : [];
+      const targetIndex = base.findIndex((entry) => normalizeString(entry.email) === normalizedEmail);
+
+      if (targetIndex >= 0) {
+        base[targetIndex] = {
+          email: base[targetIndex].email || email,
+          credits,
+        };
+      } else {
+        base.push({ email, credits });
+      }
+
+      persistedEntries = base;
+      return base;
+    });
+
+    persistGeneralUsersEntries(persistedEntries);
+  };
+
+  const handleAddCredits = async () => {
     setGeneralUsersMessage("");
     setGeneralUsersMessageTone("info");
 
@@ -426,81 +481,80 @@ export default function AdminPage() {
       return;
     }
 
-    const creditsLabel = Number.isInteger(parsedCredits)
-      ? parsedCredits.toString()
-      : parsedCredits.toFixed(2);
-
-    const existingIndex = generalUsers.findIndex(
-      (entry) => normalizeString(entry.email) === normalizedEmail,
-    );
-
-    let updatedUsers = [];
-    let confirmationMessage = "";
-
-    if (existingIndex >= 0) {
-      const updatedEntry = {
-        email: generalUsers[existingIndex].email || trimmedEmail,
-        credits: (parseCreditsValue(generalUsers[existingIndex].credits) ?? 0) + parsedCredits,
-      };
-
-      updatedUsers = [...generalUsers];
-      updatedUsers[existingIndex] = updatedEntry;
-      const newTotalLabel = Number.isInteger(updatedEntry.credits)
-        ? updatedEntry.credits.toString()
-        : updatedEntry.credits.toFixed(2);
-      confirmationMessage = `Added ${creditsLabel} credits to ${updatedEntry.email}. New balance: ${newTotalLabel} credits.`;
-    } else {
-      const newEntry = {
-        email: trimmedEmail,
-        credits: parsedCredits,
-      };
-      updatedUsers = [...generalUsers, newEntry];
-      confirmationMessage = `Created ${trimmedEmail} with ${creditsLabel} credits.`;
+    const accessToken = readStoredAdminAccessToken();
+    if (!accessToken) {
+      setGeneralUsersMessage("Sign in again to update credits.");
+      setGeneralUsersMessageTone("error");
+      return;
     }
 
-    setGeneralUsers(updatedUsers);
-    setNewGeneralEmail("");
-    setNewGeneralCredits("");
-    setGeneralUsersMessage(confirmationMessage);
-    setGeneralUsersMessageTone("success");
+    setIsProcessingCredits(true);
 
-    if (typeof window !== "undefined") {
-      try {
-        window.localStorage.setItem(GENERAL_USERS_STORAGE_KEY, JSON.stringify(updatedUsers));
-      } catch (storageError) {
-        // Ignore storage errors when persisting general users.
+    try {
+      const response = await fetch("/api/admin/credits", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({
+          email: trimmedEmail,
+          amount: parsedCredits,
+          operation: "add",
+        }),
+      });
+
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        throw new Error(payload?.error || "Unable to update credits.");
       }
 
-      try {
-        const rawSession = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-        if (rawSession) {
-          const parsedSession = JSON.parse(rawSession);
-          const sessionEmail = normalizeString(parsedSession?.user?.email ?? "");
-
-          if (sessionEmail && sessionEmail === normalizedEmail) {
-            const currentCredits = parseCreditsValue(parsedSession?.user?.credits) ?? 0;
-            const nextCredits = currentCredits + parsedCredits;
-
-            const updatedSession = {
-              ...parsedSession,
-              user: {
-                ...parsedSession.user,
-                credits: nextCredits,
-                creditBalance: nextCredits,
-              },
-            };
-
-            window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(updatedSession));
-            broadcastAuthChange();
-            setAdminProfile((prev) => ({
-              email: updatedSession?.user?.email ?? prev.email,
-              credits: nextCredits,
-            }));
+      const resolvedEmail = payload?.targetEmail || trimmedEmail;
+      if (typeof payload?.nextCredits === "number") {
+        upsertGeneralUserEntry(resolvedEmail, payload.nextCredits);
+        if (normalizeString(resolvedEmail) === normalizeString(adminProfile.email)) {
+          setAdminProfile((previous) => ({
+            ...previous,
+            credits: payload.nextCredits,
+          }));
+          if (typeof window !== "undefined") {
+            try {
+              const rawSession = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+              if (rawSession) {
+                const parsedSession = JSON.parse(rawSession);
+                const updatedSession = {
+                  ...parsedSession,
+                  user: {
+                    ...parsedSession.user,
+                    credits: payload.nextCredits,
+                    creditBalance: payload.nextCredits,
+                  },
+                };
+                window.localStorage.setItem(
+                  AUTH_SESSION_STORAGE_KEY,
+                  JSON.stringify(updatedSession),
+                );
+                broadcastAuthChange();
+              }
+            } catch (sessionError) {
+              // Ignore session storage sync errors.
+            }
           }
         }
-      } catch (sessionError) {
-        // Ignore malformed session payloads.
       }
+
+      setNewGeneralEmail("");
+      setNewGeneralCredits("");
+      setGeneralUsersMessage(
+        payload?.message || `Credits updated for ${resolvedEmail}. New balance: ${payload?.nextCredits ?? "updated"}.`,
+      );
+      setGeneralUsersMessageTone("success");
+    } catch (error) {
+      setGeneralUsersMessage(error.message || "Failed to update credits.");
+      setGeneralUsersMessageTone("error");
+    } finally {
+      setIsProcessingCredits(false);
     }
   };
 
@@ -695,6 +749,7 @@ export default function AdminPage() {
             <button
               type="button"
               onClick={handleAddCredits}
+              disabled={isProcessingCredits}
               style={{
                 alignSelf: "flex-start",
                 padding: "10px 18px",
@@ -703,10 +758,11 @@ export default function AdminPage() {
                 background: "#22d3ee",
                 color: "#0b1120",
                 fontWeight: 600,
-                cursor: "pointer",
+                cursor: isProcessingCredits ? "not-allowed" : "pointer",
+                opacity: isProcessingCredits ? 0.7 : 1,
               }}
             >
-              Add credits
+              {isProcessingCredits ? "Updating..." : "Add credits"}
             </button>
             {generalUsersMessage ? (
               <span

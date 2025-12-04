@@ -1,38 +1,92 @@
-import { useEffect } from 'react';
-import { useRouter } from 'next/router';
-import { supabase } from '../../lib/supabaseClient';
+import { useEffect } from "react";
+import { useRouter } from "next/router";
+import { supabase } from "../../lib/supabaseClient";
+
+const TOKEN_KEYS = ["access_token", "refresh_token", "expires_in", "token_type", "type"];
+
+const readTokenFromLocation = () => {
+  if (typeof window === "undefined") {
+    return { accessToken: null, refreshToken: null };
+  }
+
+  const hash = window.location.hash?.replace(/^#/, "") ?? "";
+  const search = window.location.search?.replace(/^\?/, "") ?? "";
+  const params = new URLSearchParams(hash);
+  const searchParams = new URLSearchParams(search);
+
+  const accessToken = params.get("access_token") || searchParams.get("access_token");
+  const refreshToken = params.get("refresh_token") || searchParams.get("refresh_token");
+
+  return { accessToken, refreshToken };
+};
+
+const clearTokenParams = () => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  TOKEN_KEYS.forEach((key) => {
+    url.searchParams.delete(key);
+  });
+  url.hash = "";
+  window.history.replaceState({}, "", url.toString());
+};
 
 export default function AuthCallback() {
   const router = useRouter();
 
   useEffect(() => {
-    if (!router.isReady) {
+    if (!router.isReady || !supabase) {
       return;
     }
 
+    let mounted = true;
+
     const handleAuthCallback = async () => {
-      console.log('Handling auth callback');
-      const { data, error } = await supabase.auth.getSession();
-      console.log('Session data:', data);
-      console.log('Session error:', error);
+      try {
+        const { accessToken, refreshToken } = readTokenFromLocation();
 
-      if (error) {
-        console.error('Error during auth callback:', error);
-        router.push('/login?error=auth_callback_error');
-        return;
-      }
+        if (accessToken && refreshToken) {
+          const { data, error } = await supabase.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          });
+          if (error) {
+            throw error;
+          }
+          clearTokenParams();
+          if (!mounted) {
+            return;
+          }
+          if (data?.session) {
+            router.replace("/");
+            return;
+          }
+        }
 
-      if (data.session) {
-        console.log('Session found, redirecting to /cbse');
-        router.push('/cbse');
-      } else {
-        console.log('No session found, redirecting to /login');
-        router.push('/login');
+        const { data: existing } = await supabase.auth.getSession();
+        if (existing?.session) {
+          router.replace("/");
+        } else {
+          router.replace("/login?error=no_session");
+        }
+      } catch (error) {
+        console.error("Error during auth callback", error);
+        if (!mounted) {
+          return;
+        }
+        const message = encodeURIComponent(error?.message || "auth_callback_error");
+        router.replace(`/login?error=${message}`);
       }
     };
 
     handleAuthCallback();
-  }, [router, router.isReady]);
+
+    return () => {
+      mounted = false;
+    };
+  }, [router.isReady, router]);
 
   return (
     <div

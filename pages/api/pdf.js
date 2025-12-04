@@ -50,11 +50,18 @@ export default async function handler(req, res) {
   try {
     const gradeLabel = buildGradeLabel(grade);
     const prompt = buildHandoutPrompt(subject, topic, gradeLabel);
-    const rawContent = await requestModelContent(prompt);
+
+    let rawContent;
+    try {
+      rawContent = await requestModelContent(prompt);
+    } catch (modelError) {
+      // eslint-disable-next-line no-console
+      console.warn("Falling back to template handout generation", modelError);
+      rawContent = buildFallbackHandoutContent(subject, topic, gradeLabel);
+    }
 
     if (!rawContent) {
-      res.status(500).json({ message: "Unable to generate PDF content" });
-      return;
+      rawContent = buildFallbackHandoutContent(subject, topic, gradeLabel);
     }
 
     const handout = parseHandout(rawContent, subject, topic, gradeLabel);
@@ -63,7 +70,20 @@ export default async function handler(req, res) {
 
     res.status(200).json({ base64 });
   } catch (error) {
-    res.status(500).json({ message: "Unable to generate PDF" });
+    // eslint-disable-next-line no-console
+    console.error("Primary PDF generation failed", error);
+    try {
+      const gradeLabel = buildGradeLabel(grade);
+      const fallbackContent = buildFallbackHandoutContent(subject, topic, gradeLabel);
+      const fallbackHandout = parseHandout(fallbackContent, subject, topic, gradeLabel);
+      const pdfBytes = await createHandoutPdf(fallbackHandout);
+      const base64 = Buffer.from(pdfBytes).toString("base64");
+      res.status(200).json({ base64, providerFallback: true });
+    } catch (fallbackError) {
+      // eslint-disable-next-line no-console
+      console.error("Fallback PDF generation failed", fallbackError);
+      res.status(500).json({ message: fallbackError.message || "Unable to generate PDF" });
+    }
   }
 }
 
@@ -158,6 +178,23 @@ function parseHandout(content, subject, topic, gradeLabel) {
   }
 
   return { title, sections };
+}
+
+function buildFallbackHandoutContent(subject, topic, gradeLabel) {
+  const safeTopic = topic || "Key Concepts";
+  const normalizedSubject = subject || "Subject";
+
+  return `TITLE: ${gradeLabel} ${normalizedSubject} – ${safeTopic}
+SECTION: Core Ideas
+- Overview of ${safeTopic.toLowerCase()} within ${normalizedSubject}
+- Important definitions teachers should review
+- Everyday examples students can relate to
+SECTION: Classroom Discussion
+- Ask students to explain ${safeTopic.toLowerCase()} in their own words
+- Encourage connections to prior knowledge and real-life use cases
+SECTION: Practice and Reflection
+- Provide at least two quick problems or prompts
+- Close with an exit ticket summarizing one learning takeaway`;
 }
 
 async function createHandoutPdf(handout) {

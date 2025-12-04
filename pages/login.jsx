@@ -1,7 +1,6 @@
 import { useRouter } from "next/router";
 import { useEffect, useMemo, useState } from "react";
 
-import AuthControls from "../components/AuthControls";
 import { supabase, isSupabaseConfigured } from "../lib/supabaseClient";
 
 const statusCopy = {
@@ -91,23 +90,16 @@ export default function LoginPage() {
           gap: "18px",
         }}
       >
-        <AuthControls
-          appearance={{
-            text: "#e2e8f0",
-            accent: "#38bdf8",
-            border: "#1f2937",
-            subduedText: "#94a3b8",
-            surface: "#0f172a",
-            isDark: true,
-          }}
-          containerStyle={{ alignSelf: "flex-end" }}
-        />
         <header style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           <span style={{ color: "#38bdf8", fontWeight: 600, letterSpacing: "0.12em" }}>
             TEACHWISE AI
           </span>
           <h1 style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>Sign in</h1>
         </header>
+
+        <p style={{ margin: "0 0 12px 0", color: "#cbd5f5", fontSize: "1rem", lineHeight: 1.6 }}>
+          Teachwise AI is a Gen AI Powered App for helping the teachers across the globe to generate presentations, MCQs, Lesson Plans, Web Pages, PDFs and much more.
+        </p>
 
         <p style={{ margin: 0, lineHeight: 1.6, fontSize: "0.95rem", color: "#cbd5f5" }}>
           {statusCopy[status]}
@@ -178,23 +170,6 @@ export default function LoginPage() {
             {errorMessage}
           </div>
         ) : null}
-
-        <button
-          type="button"
-          onClick={() => router.push("/")}
-          style={{
-            marginTop: "4px",
-            padding: "10px 18px",
-            borderRadius: "9999px",
-            border: "1px solid #1f2937",
-            background: "transparent",
-            color: "#cbd5f5",
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          Back to dashboard
-        </button>
       </div>
     </div>
   );

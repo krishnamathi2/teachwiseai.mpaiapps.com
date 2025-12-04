@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
-import Image from "next/image";
 import { SUBJECT_FILES } from "../lib/contentMap";
+import { supabase } from "../lib/supabaseClient";
 import {
   detectGuestMode,
   getDefaultGuestQuota,
@@ -13,7 +13,9 @@ import {
   broadcastAuthChange,
 } from "../lib/guestUsage";
 
-const CREDITS_PER_GENERATION = 1;
+const CREDITS_PER_GENERATION = 10;
+
+const GENERAL_USERS_STORAGE_KEY = "teachwiseai:generalUsers";
 
 const readStoredCredits = () => {
   if (typeof window === "undefined") return 0;
@@ -21,22 +23,258 @@ const readStoredCredits = () => {
   return stored ? parseInt(stored, 10) : 0;
 };
 
+const readStoredEmail = () => {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const email = window.localStorage.getItem("teachwiseai:email");
+    return email || null;
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error("Failed to read stored email", error);
+    return null;
+  }
+};
+
+const normalizeCreditNumber = (value) => {
+  if (value === null || value === undefined) {
+    return 0;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+
+  return Math.max(0, Math.round(numeric));
+};
+
+const persistGeneralUserCredits = (email, credits) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
+  if (!normalizedEmail) {
+    return;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(GENERAL_USERS_STORAGE_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    const baseline = Array.isArray(parsed) ? parsed : [];
+    const sanitizedCredits = normalizeCreditNumber(credits);
+    let updated = false;
+
+    const nextEntries = baseline.map((entry = {}) => {
+      const entryEmail = typeof entry.email === "string" ? entry.email.trim().toLowerCase() : "";
+      if (entryEmail === normalizedEmail) {
+        updated = true;
+        return {
+          email: entry.email || email,
+          credits: sanitizedCredits,
+        };
+      }
+      return entry;
+    });
+
+    if (!updated) {
+      nextEntries.push({ email, credits: sanitizedCredits });
+    }
+
+    window.localStorage.setItem(GENERAL_USERS_STORAGE_KEY, JSON.stringify(nextEntries));
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Unable to persist general user credits", error);
+  }
+};
+
+const persistStoredSessionCredits = (credits) => {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
+    if (!raw) {
+      return;
+    }
+
+    const parsed = JSON.parse(raw);
+    const nextPayload = {
+      ...(parsed || {}),
+      user: {
+        ...(parsed?.user || {}),
+        credits: normalizeCreditNumber(credits),
+      },
+    };
+
+    window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(nextPayload));
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.warn("Unable to sync session credits", error);
+  }
+};
+
 const consumeStoredCredits = (amount) => {
   const current = readStoredCredits();
   const nextCredits = Math.max(current - amount, 0);
   if (typeof window !== "undefined") {
     window.localStorage.setItem("teachwiseai:credits", nextCredits.toString());
+    const userEmail = readStoredEmail();
+    persistGeneralUserCredits(userEmail, nextCredits);
+    persistStoredSessionCredits(nextCredits);
   }
   return { nextCredits };
 };
 
 const startCreditPurchaseFlow = (router, isGuestUser) => {
-  // Dummy implementation
-  alert("Credit purchase not implemented");
+  if (!router) {
+    return;
+  }
+
+  const target = isGuestUser ? "/login" : "/credits";
+  router.push(target).catch(() => {});
 };
 
-const CreditCounterBadge = ({ theme, isGuestUser, guestQuota, userCredits, userEmail, onAddCredits, style }) => {
-  return null; // Dummy component
+const COUNTRY_OPTIONS = [
+  {
+    id: "india",
+    label: "India",
+    supported: true,
+  },
+  {
+    id: "usa",
+    label: "USA",
+    supported: false,
+    message: "USA-specific content is coming soon. Reach out to support if you'd like early access.",
+  },
+  {
+    id: "australia",
+    label: "Australia",
+    supported: false,
+    message: "Australian curriculum support is in progress. Contact us to be notified when it's ready.",
+  },
+];
+
+const BOARD_OPTIONS = [
+  { id: "cbse", label: "CBSE" },
+  { id: "state", label: "State Boards" },
+];
+
+const BOARD_ROUTE_MAP = {
+  cbse: "/cbse",
+};
+
+const DEFAULT_BOARD_SELECTIONS = BOARD_OPTIONS.reduce((acc, option) => {
+  acc[option.id] = false;
+  return acc;
+}, {});
+
+const STATE_BOARD_OPTIONS = [
+  "Tamil Nadu",
+  "Karnataka",
+  "Telangana",
+  "Andhra Pradesh",
+  "Bihar",
+  "Kerala",
+  "Maharashtra",
+  "Gujarat",
+];
+
+const DEFAULT_STATE_SELECTIONS = STATE_BOARD_OPTIONS.reduce((acc, label) => {
+  acc[label] = false;
+  return acc;
+}, {});
+
+const CreditCounterBadge = ({
+  theme,
+  isGuestUser,
+  guestQuota,
+  userCredits,
+  userEmail,
+  onAddCredits,
+  onLogout,
+  style,
+}) => {
+  const label = isGuestUser
+    ? `Guest: ${guestQuota.remaining}/${guestQuota.limit} free generations left`
+    : `${userEmail || "Signed in"}`;
+  const creditsLabel = isGuestUser
+    ? "Upgrade for more"
+    : `${typeof userCredits === "number" ? userCredits : 0} credits`; 
+
+  return (
+    <div
+      style={{
+        position: "absolute",
+        top: "16px",
+        left: "16px",
+        background: theme.isDark ? "rgba(15,23,42,0.9)" : "#ffffff",
+        border: `1px solid ${theme.panelBorder}`,
+        borderRadius: "16px",
+        padding: "12px 16px",
+        boxShadow: theme.isDark
+          ? "0 12px 24px rgba(0,0,0,0.45)"
+          : "0 12px 24px rgba(15,23,42,0.12)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+        minWidth: "220px",
+        fontSize: "0.9rem",
+        ...style,
+      }}
+    >
+      <span style={{ fontWeight: 600, color: theme.text }}>{label}</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+        }}
+      >
+        <span style={{ color: theme.isDark ? "#cbd5f5" : "#475569" }}>{creditsLabel}</span>
+        {!isGuestUser ? (
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={onAddCredits}
+              style={{
+                border: "none",
+                borderRadius: "9999px",
+                padding: "6px 12px",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                color: theme.isDark ? "#0b1120" : "#ffffff",
+                background: theme.accent,
+                cursor: "pointer",
+              }}
+            >
+              Add credits
+            </button>
+            <button
+              type="button"
+              onClick={onLogout}
+              style={{
+                border: "1px solid",
+                borderColor: theme.panelBorder,
+                borderRadius: "9999px",
+                padding: "6px 12px",
+                fontSize: "0.85rem",
+                fontWeight: 600,
+                color: theme.isDark ? "#fecdd3" : "#b91c1c",
+                background: theme.isDark ? "rgba(248, 113, 113, 0.1)" : "rgba(248, 113, 113, 0.15)",
+                cursor: "pointer",
+              }}
+            >
+              Logout
+            </button>
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 };
 
 const GRADE_CONFIGS = [
@@ -101,6 +339,59 @@ const SUBJECT_PDF_ACTIONS = {
   grade8: {},
   grade7: {},
   grade6: {},
+};
+
+const SUBJECT_ACTIONS = [
+  "Generate presentations",
+  "Generate PDF",
+  "Generate Lesson Plan",
+  "Generate Web Page",
+  "Generate Concept Map",
+  "Generate MCQs",
+];
+
+const NoCreditsInlinePrompt = ({ message, onAddCredits, theme }) => {
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <span
+      style={{
+        fontSize: "0.82rem",
+        color: "#f87171",
+        display: "inline-flex",
+        gap: "8px",
+        alignItems: "center",
+        flexWrap: "wrap",
+      }}
+    >
+      {message}
+      <button
+        type="button"
+        onClick={onAddCredits}
+        style={{
+          padding: "4px 10px",
+          borderRadius: "9999px",
+          border: "none",
+          background: theme?.accent || "#2563eb",
+          color: theme?.isDark ? "#0b1120" : "#ffffff",
+          fontWeight: 600,
+          fontSize: "0.78rem",
+          cursor: "pointer",
+        }}
+      >
+        Add credits
+      </button>
+    </span>
+  );
+};
+
+const PROVIDER_ERROR_MESSAGES = {
+  openai: "OpenAI API key missing. Set OPENAI_API_KEY in .env.local",
+  hf: "Hugging Face token missing. Set HUGGINGFACE_API_KEY",
+  huggingface: "Hugging Face token missing. Set HUGGINGFACE_API_KEY",
+  ollama: "Ollama endpoint not reachable. Start Ollama or change provider",
 };
 
 function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
@@ -248,150 +539,7 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
 }
 
 function Home() {
-  const router = useRouter();
-
-  const handleSignInClick = () => {
-    router.push("/login");
-  };
-
-  return (
-    <main>
-      <div>
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-            gap: "48px",
-            alignItems: "center",
-          }}
-        >
-            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: "8px",
-                    background: "rgba(56, 189, 248, 0.18)",
-                    color: "#0f172a",
-                    padding: "8px 18px",
-                    borderRadius: "9999px",
-                    fontWeight: 600,
-                    fontSize: "0.9rem",
-                    width: "fit-content",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  Teachwise AI
-                </span>
-                <h1
-                  style={{
-                    fontSize: "clamp(2.3rem, 4vw, 3rem)",
-                    margin: 0,
-                    fontWeight: 700,
-                    color: "#0f172a",
-                  }}
-                >
-                  AI Solutions for Smarter Teaching
-                </h1>
-                <p
-                  style={{
-                    margin: 0,
-                    fontSize: "1.05rem",
-                    lineHeight: 1.8,
-                    color: "#1f2937",
-                    maxWidth: "540px",
-                  }}
-                >
-                  Streamline lesson planning, automate exam preparation, and gain insights into
-                  student progress&mdash;all with Teachwise AI.
-                </p>
-              </div>
-
-              <blockquote
-                style={{
-                  margin: 0,
-                  paddingLeft: "16px",
-                  borderLeft: "3px solid rgba(94, 234, 212, 0.6)",
-                  color: "#475569",
-                  fontSize: "0.95rem",
-                  lineHeight: 1.7,
-                  maxWidth: "560px",
-                }}
-              >
-                “A good teacher can inspire hope, ignite the imagination, and instill a love of
-                learning.” — Brad Henry
-              </blockquote>
-            </div>
-
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                borderRadius: "32px",
-                overflow: "hidden",
-                boxShadow: "0 32px 60px rgba(15, 23, 42, 0.45)",
-              }}
-            >
-              <Image
-                src="/images/classroom-hero.jpg"
-                alt="Teacher guiding students in a classroom"
-                width={1200}
-                height={900}
-                priority
-                style={{
-                  width: "100%",
-                  height: "auto",
-                  display: "block",
-                }}
-              />
-            </div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            width: "min(1120px, 100%)",
-            marginTop: "32px",
-            display: "flex",
-            flexDirection: "column",
-            gap: "16px",
-            alignItems: "flex-start",
-          }}
-        >
-          <span
-            style={{
-              color: "#0ea5e9",
-              fontWeight: 700,
-              fontSize: "1.05rem",
-              letterSpacing: "0.03em",
-            }}
-          >
-            Get started for free
-          </span>
-          <button
-            type="button"
-            onClick={handleSignInClick}
-            style={{
-              padding: "10px 20px",
-              borderRadius: "24px",
-              border: "1px solid rgba(59, 130, 246, 0.65)",
-              background: "rgba(59, 130, 246, 0.12)",
-              color: "#1d4ed8",
-              fontWeight: 600,
-              fontSize: "0.9rem",
-              letterSpacing: "0.03em",
-              cursor: "pointer",
-              boxShadow: "none",
-              minWidth: "140px",
-              alignSelf: "flex-start",
-            }}
-          >
-            Sign in
-          </button>
-        </div>
-      </main>
-  );
+  return <CbseDashboard boardLabel="CBSE" />;
 }
 // End of Home component
 
@@ -406,7 +554,11 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const [grade8, setGrade8] = useState(false);
   const [grade7, setGrade7] = useState(false);
   const [grade6, setGrade6] = useState(false);
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [selectedCountry, setSelectedCountry] = useState(null);
+  const [selectedBoard, setSelectedBoard] = useState(boardLabel);
+  const [boardSelections, setBoardSelections] = useState({ ...DEFAULT_BOARD_SELECTIONS });
+  const [stateBoardSelections, setStateBoardSelections] = useState({ ...DEFAULT_STATE_SELECTIONS });
+  const [isDarkMode, setIsDarkMode] = useState(true);
   const [selectedSubjects, setSelectedSubjects] = useState({});
   const [subjectActionSelections, setSubjectActionSelections] = useState({});
   const [pdfCache, setPdfCache] = useState({});
@@ -415,6 +567,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const [presentationStatus, setPresentationStatus] = useState({});
   const [presentationError, setPresentationError] = useState({});
   const [presentationTopics, setPresentationTopics] = useState({});
+  const [presentationPeriodLength, setPresentationPeriodLength] = useState({});
   const [presentationHistory, setPresentationHistory] = useState({});
   const [handoutStatus, setHandoutStatus] = useState({});
   const [handoutError, setHandoutError] = useState({});
@@ -439,13 +592,20 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const initialGuestMode = detectGuestMode();
   const [isGuestUser, setIsGuestUser] = useState(initialGuestMode);
   const [guestQuota, setGuestQuota] = useState(() => getGuestQuotaSnapshot());
-  const [userCredits, setUserCredits] = useState(() =>
-    initialGuestMode ? null : readStoredCredits(),
-  );
-  const [userEmail, setUserEmail] = useState(() =>
-    initialGuestMode ? null : readStoredEmail(),
-  );
+  const [userCredits, setUserCredits] = useState(() => null);
+  const [userEmail, setUserEmail] = useState(() => null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const normalizedBoardLabel = (boardLabel ?? "").toLowerCase();
+  const selectedCountryConfig = useMemo(
+    () => COUNTRY_OPTIONS.find((option) => option.id === selectedCountry) || null,
+    [selectedCountry],
+  );
+  const isIndiaSelected = selectedCountry === "india";
+  const unsupportedCountryMessage =
+    selectedCountryConfig && !selectedCountryConfig.supported
+      ? selectedCountryConfig.message || "This region is coming soon."
+      : null;
 
   const gradeControls = {
     grade12: { isActive: grade12, setActive: setGrade12 },
@@ -456,6 +616,50 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     grade7: { isActive: grade7, setActive: setGrade7 },
     grade6: { isActive: grade6, setActive: setGrade6 },
   };
+
+  useEffect(() => {
+    if (selectedCountry !== "india") {
+      setBoardSelections({ ...DEFAULT_BOARD_SELECTIONS });
+      setStateBoardSelections({ ...DEFAULT_STATE_SELECTIONS });
+      setSelectedBoard(boardLabel);
+    }
+  }, [boardLabel, selectedCountry]);
+
+  useEffect(() => {
+    const isSelectionPage = router.pathname === "/";
+    if (isSelectionPage) {
+      return;
+    }
+
+    if (normalizedBoardLabel.includes("cbse")) {
+      setBoardSelections((previous) => {
+        if (previous.cbse) {
+          return previous;
+        }
+        return { ...previous, cbse: true };
+      });
+      return;
+    }
+
+    const matchingState = STATE_BOARD_OPTIONS.find((state) =>
+      normalizedBoardLabel.includes(state.toLowerCase())
+    );
+
+    if (matchingState) {
+      setBoardSelections((previous) => {
+        if (previous.state) {
+          return previous;
+        }
+        return { ...previous, state: true };
+      });
+      setStateBoardSelections((previous) => {
+        if (previous[matchingState]) {
+          return previous;
+        }
+        return { ...previous, [matchingState]: true };
+      });
+    }
+  }, [router.pathname, normalizedBoardLabel]);
 
   useEffect(() => {
     if (!router.isReady) {
@@ -538,8 +742,20 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     };
   }, []);
 
+  useEffect(() => {
+    setIsHydrated(true);
+  }, []);
+
   const handleAddCreditsRequest = () => {
     startCreditPurchaseFlow(router, isGuestUser);
+  };
+
+  const handleBackToBoardSelection = () => {
+    setSelectedCountry(null);
+    setBoardSelections({ ...DEFAULT_BOARD_SELECTIONS });
+    setStateBoardSelections({ ...DEFAULT_STATE_SELECTIONS });
+    setSelectedBoard(boardLabel);
+    router.push("/");
   };
 
   useEffect(() => {
@@ -576,6 +792,88 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
       const baseline = typeof previous === "number" ? previous : 0;
       return Math.max(baseline - CREDITS_PER_GENERATION, 0);
     });
+  };
+
+  const handleLogout = async () => {
+    try {
+      if (supabase) {
+        await supabase.auth.signOut();
+      }
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.warn("Failed to sign out via Supabase", error);
+    } finally {
+      router.replace("/login");
+    }
+  };
+
+  const handleCountrySelection = (countryId) => {
+    setSelectedCountry((previous) => {
+      const next = previous === countryId ? null : countryId;
+      if (countryId !== "india" || next !== "india") {
+        setBoardSelections({ ...DEFAULT_BOARD_SELECTIONS });
+        setStateBoardSelections({ ...DEFAULT_STATE_SELECTIONS });
+        setSelectedBoard(boardLabel);
+      }
+      return next;
+    });
+  };
+
+  const handleBoardCheckboxChange = (optionId) => {
+    setBoardSelections((prev) => {
+      const nextValue = !prev[optionId];
+      const next = { ...prev, [optionId]: nextValue };
+      const activeOption = BOARD_OPTIONS.find((option) => next[option.id]);
+      if (activeOption?.id === "state") {
+        const anyStateSelected = Object.values(stateBoardSelections).some(Boolean);
+        setSelectedBoard(anyStateSelected ? `${activeOption.label}` : activeOption.label);
+      } else if (activeOption?.id === "cbse" && nextValue) {
+        setSelectedBoard(activeOption.label);
+      } else if (!activeOption) {
+        setSelectedBoard(boardLabel);
+      }
+
+      if (nextValue) {
+        const targetRoute = BOARD_ROUTE_MAP[optionId];
+        if (targetRoute) {
+          router.push(targetRoute).catch(() => {});
+        }
+      } else if (optionId === "state") {
+        setStateBoardSelections({ ...DEFAULT_STATE_SELECTIONS });
+      }
+
+      return next;
+    });
+  };
+
+  const handleStateBoardSelection = (label) => {
+    setStateBoardSelections((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      const anySelected = Object.values(next).some(Boolean);
+      if (anySelected) {
+        setSelectedBoard(`State Boards - ${label}`);
+      } else {
+        setSelectedBoard("State Boards");
+      }
+      return next;
+    });
+  };
+
+  const resolveProviderHint = (provider) => {
+    if (!provider) {
+      return null;
+    }
+    const normalized = provider.toLowerCase();
+    if (normalized.includes("openai")) {
+      return PROVIDER_ERROR_MESSAGES.openai;
+    }
+    if (normalized.includes("hugging")) {
+      return PROVIDER_ERROR_MESSAGES.huggingface;
+    }
+    if (normalized.includes("ollama")) {
+      return PROVIDER_ERROR_MESSAGES.ollama;
+    }
+    return null;
   };
 
   const fetchPdfContent = async (gradeId, subject, action) => {
@@ -855,6 +1153,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     }
     const subjectKey = getSubjectKey(gradeId, subject);
     const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
+    const periodMinutes = presentationPeriodLength[subjectKey] || 40;
 
     if (!topic) {
       setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
@@ -875,13 +1174,17 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     setPresentationError((prev) => ({ ...prev, [subjectKey]: null }));
 
     try {
-      const response = await fetch(`/api/presentation?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}`, {
+      const response = await fetch(`/api/presentation?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}&periodMinutes=${encodeURIComponent(String(periodMinutes))}`, {
         cache: "no-store",
         method: "GET",
       });
 
       if (!response.ok) {
-        throw new Error("Failed to generate presentation");
+        const errorBody = await response.json().catch(() => ({}));
+        const providerHint = errorBody?.providerHint || resolveProviderHint(errorBody?.provider);
+        throw new Error(
+          errorBody?.message || providerHint || "Failed to generate presentation"
+        );
       }
 
       const payload = await response.json();
@@ -926,20 +1229,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
       }));
     }
   };
-
-  // Reads the stored user email from localStorage
-const readStoredEmail = () => {
-  if (typeof window === "undefined") return null;
-
-  try {
-    const email = window.localStorage.getItem("teachwiseai:email");
-    return email || null;
-  } catch (error) {
-    console.error("Failed to4 read stored email:", error);
-    return null;
-  }
-};
-
 
   const triggerHandoutDownload = async (gradeId, subject, topic) => {
     if (isGuestUser) {
@@ -1442,7 +1731,7 @@ const readStoredEmail = () => {
         const topic = handoutTopics[subjectKey]?.trim();
         triggerHandoutDownload(gradeId, subject, topic);
       }
-      if (action === "Lesson Plan") {
+      if (action === "Generate Lesson Plan") {
         const topic = lessonPlanTopics[subjectKey]?.trim();
         triggerLessonPlanDownload(gradeId, subject, topic);
       }
@@ -1509,7 +1798,7 @@ const readStoredEmail = () => {
           return rest;
         });
       }
-      if (action === "Lesson Plan") {
+      if (action === "Generate Lesson Plan") {
         setLessonPlanStatus((prev) => {
           const { [subjectKey]: _removed, ...rest } = prev;
           return rest;
@@ -1607,6 +1896,12 @@ const readStoredEmail = () => {
   const effectiveCredits = typeof userCredits === "number" ? userCredits : 0;
   const isOutOfCredits = effectiveCredits < CREDITS_PER_GENERATION;
   const shouldDisableGeneration = guestLimitReached || (!isGuestUser && isOutOfCredits);
+  const isBoardSelectionPage = router.pathname === "/";
+  const hasStateSelection = Object.values(stateBoardSelections).some(Boolean);
+  const shouldShowGrades =
+    !isBoardSelectionPage ||
+    boardSelections.cbse ||
+    (boardSelections.state && hasStateSelection);
 
   return (
     <div
@@ -1626,15 +1921,18 @@ const readStoredEmail = () => {
         textAlign: "center",
       }}
     >
-      <CreditCounterBadge
-        theme={theme}
-        isGuestUser={isGuestUser}
-        guestQuota={guestQuota}
-        userCredits={userCredits}
-        userEmail={userEmail}
-        onAddCredits={handleAddCreditsRequest}
-        style={{ top: "24px" }}
-      />
+      {isHydrated ? (
+        <CreditCounterBadge
+          theme={theme}
+          isGuestUser={isGuestUser}
+          guestQuota={guestQuota}
+          userCredits={userCredits}
+          userEmail={userEmail}
+          onAddCredits={handleAddCreditsRequest}
+          onLogout={handleLogout}
+          style={{ top: "24px" }}
+        />
+      ) : null}
       <button
         type="button"
         onClick={() => setIsDarkMode(!isDarkMode)}
@@ -1687,7 +1985,7 @@ const readStoredEmail = () => {
       </button>
       <button
         type="button"
-        onClick={() => router.push("/")}
+        onClick={handleBackToBoardSelection}
         style={{
           alignSelf: "flex-end",
           marginBottom: "16px",
@@ -1717,87 +2015,245 @@ const readStoredEmail = () => {
         Welcome to teachwiseai.mpaiapps.com
       </h1>
 
+      <p
+        style={{
+          margin: "0 0 20px 0",
+          color: theme.isDark ? "#cbd5f5" : "#475569",
+          fontSize: "1rem",
+          lineHeight: 1.6,
+        }}
+      >
+        Teachwise AI is a Gen AI Powered App for helping the teachers across the globe to generate presentations, MCQs, Lesson Plans, Web Pages, PDFs and much more.
+      </p>
+
       {/* Board Heading */}
-      <h2
+      <p
         style={{
-          fontSize: "1.35rem",
-          fontWeight: 700,
-          marginBottom: "10px",
-          letterSpacing: "0.02em",
+          margin: "0 0 16px 0",
+          color: theme.isDark ? "#cbd5f5" : "#475569",
+          fontSize: "0.95rem",
+          lineHeight: 1.6,
         }}
       >
-        {boardLabel}
-      </h2>
+        For support email
+        {" "}
+        <a
+          href="mailto:support@teachwiseai.mpaiapps.com"
+          style={{ color: theme.accent, fontWeight: 600 }}
+        >
+          support@teachwiseai.mpaiapps.com
+        </a>
+        {", "}
+        call
+        {" "}
+        <a href="tel:+919629677059" style={{ color: theme.accent, fontWeight: 600 }}>
+          +91 9629677059
+        </a>
+        .
+      </p>
 
-
-
-      {/* Checkboxes */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "8px",
-          fontSize: "1.2rem",
-          background: theme.panel,
-          border: "1px solid",
-          borderColor: theme.panelBorder,
-          padding: "16px 24px",
-          borderRadius: "14px",
-          width: "100%",
-          maxWidth: "720px",
-          textAlign: "left",
-          boxShadow: isDarkMode
-            ? "0 20px 35px rgba(15, 23, 42, 0.5)"
-            : "0 18px 30px rgba(15, 23, 42, 0.08)",
-        }}
-      >
-        {GRADE_CONFIGS.map((gradeConfig) => {
-          const control = gradeControls[gradeConfig.id];
-          if (!control) {
-            return null;
-          }
-
-          const { isActive, setActive } = control;
-          const selectedGradeSubjects = selectedSubjects?.[gradeConfig.id] ?? {};
-
-          return (
-            <div
-              key={gradeConfig.id}
-              style={{ display: "flex", flexDirection: "column", gap: "8px" }}
-            >
-              <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+      {isBoardSelectionPage && (
+        <>
+          <p
+            style={{
+              margin: "0 0 12px 0",
+              color: theme.isDark ? "#cbd5f5" : "#475569",
+              fontSize: "0.95rem",
+            }}
+          >
+            Please start by clicking your relevant country
+          </p>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "10px",
+              alignItems: "flex-start",
+              marginBottom: "16px",
+            }}
+          >
+            {COUNTRY_OPTIONS.map((country) => (
+              <label
+                key={country.id}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "10px",
+                  fontSize: "1rem",
+                  fontWeight: 500,
+                  color: theme.text,
+                  opacity: country.supported ? 1 : 0.85,
+                }}
+              >
                 <input
                   type="checkbox"
-                  checked={isActive}
-                  onChange={() => setActive(!isActive)}
+                  checked={selectedCountry === country.id}
+                  onChange={() => handleCountrySelection(country.id)}
                   style={{ accentColor: theme.accent }}
                 />
-                {gradeConfig.label}
+                {country.label}
+                {!country.supported ? (
+                  <span
+                    style={{
+                      marginLeft: "4px",
+                      fontSize: "0.8rem",
+                      color: theme.isDark ? "#facc15" : "#b45309",
+                      fontWeight: 600,
+                    }}
+                  >
+                    Coming soon
+                  </span>
+                ) : null}
               </label>
+            ))}
+          </div>
 
-              {isActive && (
-                <div
-                  style={{
-                    paddingLeft: "30px",
-                    display: "grid",
-                    gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
-                    gap: "8px 18px",
-                    fontSize: "1rem",
-                    color: theme.text,
-                  }}
-                >
-                  {gradeConfig.subjects.map((subject) => {
-                    const isSelected = Boolean(selectedGradeSubjects[subject]);
-                    const subjectKey = getSubjectKey(gradeConfig.id, subject);
-                    const actionState =
-                      subjectActionSelections?.[gradeConfig.id]?.[subject] ?? {};
+          {unsupportedCountryMessage && (
+            <div
+              style={{
+                marginBottom: "20px",
+                padding: "12px 16px",
+                borderRadius: "14px",
+                border: "1px solid",
+                borderColor: theme.panelBorder,
+                background: theme.isDark ? "rgba(250, 204, 21, 0.1)" : "rgba(251, 191, 36, 0.15)",
+                color: theme.isDark ? "#fde68a" : "#92400e",
+                width: "100%",
+                maxWidth: "640px",
+                textAlign: "left",
+              }}
+            >
+              {unsupportedCountryMessage}
+            </div>
+          )}
 
-                    return (
-                      <div
-                        key={`${gradeConfig.id}-${subject}`}
-                        style={{ display: "flex", flexDirection: "column", gap: "6px" }}
-                      >
-                        <label
+          {isIndiaSelected && (
+            <div
+              style={{
+                display: "flex",
+                gap: "20px",
+                marginBottom: "16px",
+                padding: "12px 16px",
+                background: theme.panel,
+                borderRadius: "14px",
+                border: "1px solid",
+                borderColor: theme.panelBorder,
+                width: "100%",
+                maxWidth: "480px",
+              }}
+            >
+              {BOARD_OPTIONS.map((option) => (
+                <label key={option.id} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(boardSelections[option.id])}
+                    onChange={() => handleBoardCheckboxChange(option.id)}
+                    style={{ accentColor: theme.accent }}
+                  />
+                  {option.label}
+                </label>
+              ))}
+            </div>
+          )}
+
+          {isIndiaSelected && boardSelections.state && (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                gap: "12px",
+                marginBottom: "20px",
+                padding: "16px",
+                background: theme.panel,
+                borderRadius: "14px",
+                border: "1px solid",
+                borderColor: theme.panelBorder,
+                width: "100%",
+                maxWidth: "720px",
+              }}
+            >
+              {STATE_BOARD_OPTIONS.map((label) => (
+                <label key={label} style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(stateBoardSelections[label])}
+                    onChange={() => handleStateBoardSelection(label)}
+                    style={{ accentColor: theme.accent }}
+                  />
+                  {label}
+                </label>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {shouldShowGrades && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            fontSize: "1.2rem",
+            background: theme.panel,
+            border: "1px solid",
+            borderColor: theme.panelBorder,
+            padding: "16px 24px",
+            borderRadius: "14px",
+            width: "100%",
+            maxWidth: "720px",
+            textAlign: "left",
+            boxShadow: isDarkMode
+              ? "0 20px 35px rgba(15, 23, 42, 0.5)"
+              : "0 18px 30px rgba(15, 23, 42, 0.08)",
+          }}
+        >
+          {GRADE_CONFIGS.map((gradeConfig) => {
+            const control = gradeControls[gradeConfig.id];
+            if (!control) {
+              return null;
+            }
+
+            const { isActive, setActive } = control;
+            const selectedGradeSubjects = selectedSubjects?.[gradeConfig.id] ?? {};
+
+            return (
+              <div
+                key={gradeConfig.id}
+                style={{ display: "flex", flexDirection: "column", gap: "8px" }}
+              >
+                <label style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <input
+                    type="checkbox"
+                    checked={isActive}
+                    onChange={() => setActive(!isActive)}
+                    style={{ accentColor: theme.accent }}
+                  />
+                  {gradeConfig.label}
+                </label>
+
+                {isActive && (
+                  <div
+                    style={{
+                      paddingLeft: "30px",
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: "8px 18px",
+                      fontSize: "1rem",
+                      color: theme.text,
+                    }}
+                  >
+                    {gradeConfig.subjects.map((subject) => {
+                      const isSelected = Boolean(selectedGradeSubjects[subject]);
+                      const subjectKey = getSubjectKey(gradeConfig.id, subject);
+                      const actionState =
+                        subjectActionSelections?.[gradeConfig.id]?.[subject] ?? {};
+
+                      return (
+                        <div
+                          key={`${gradeConfig.id}-${subject}`}
+                          style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                        >
+                          <label
                           style={{
                             display: "flex",
                             alignItems: "center",
@@ -1957,6 +2413,29 @@ const readStoredEmail = () => {
                                             color: theme.text,
                                           }}
                                         />
+                                        <input
+                                          type="number"
+                                          value={presentationPeriodLength[subjectKey] || 40}
+                                          onChange={(event) => {
+                                            const value = parseInt(event.target.value, 10) || 40;
+                                            setPresentationPeriodLength((prev) => ({
+                                              ...prev,
+                                              [subjectKey]: value,
+                                            }));
+                                          }}
+                                          placeholder="Period (min)"
+                                          min="1"
+                                          max="180"
+                                          style={{
+                                            width: "100px",
+                                            padding: "8px 12px",
+                                            borderRadius: "10px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
                                         <button
                                           type="button"
                                           onClick={() =>
@@ -2013,14 +2492,11 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {presentationState === "no-credits" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {noCreditsMessage}
-                                        </span>
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
                                       )}
                                       {presentationState === "success" && (
                                         <span
@@ -2033,14 +2509,22 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {!presentationState && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#94a3b8" : "#475569",
-                                          }}
-                                        >
-                                          Ready to generate when you are.
-                                        </span>
+                                        !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
                                       )}
                                       {recentTopics.length > 0 && (
                                         <div
@@ -2187,14 +2671,11 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {handoutState === "no-credits" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {noCreditsMessage}
-                                        </span>
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
                                       )}
                                       {handoutState === "success" && (
                                         <span
@@ -2207,14 +2688,22 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {!handoutState && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#94a3b8" : "#475569",
-                                          }}
-                                        >
-                                          Ready to generate when you are.
-                                        </span>
+                                        !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
                                       )}
                                       {handoutRecent.length > 0 && (
                                         <div
@@ -2262,7 +2751,7 @@ const readStoredEmail = () => {
                                     </div>
                                   )}
 
-                                  {isActionSelected && action === "Lesson Plan" && (
+                                  {isActionSelected && action === "Generate Lesson Plan" && (
                                     <div
                                       style={{
                                         display: "flex",
@@ -2361,14 +2850,11 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {lessonPlanState === "no-credits" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {noCreditsMessage}
-                                        </span>
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
                                       )}
                                       {lessonPlanState === "success" && (
                                         <span
@@ -2381,14 +2867,22 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {!lessonPlanState && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#94a3b8" : "#475569",
-                                          }}
-                                        >
-                                          Ready to generate when you are.
-                                        </span>
+                                        !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
                                       )}
                                       {lessonPlanRecent.length > 0 && (
                                         <div
@@ -2533,14 +3027,11 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {webPageState === "no-credits" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {noCreditsMessage}
-                                        </span>
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
                                       )}
                                       {webPageState === "success" && (
                                         <span
@@ -2553,14 +3044,22 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {!webPageState && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#94a3b8" : "#475569",
-                                          }}
-                                        >
-                                          Ready to generate when you are.
-                                        </span>
+                                        !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
                                       )}
                                       {webPageRecent.length > 0 && (
                                         <div
@@ -2707,14 +3206,11 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {conceptMapState === "no-credits" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {noCreditsMessage}
-                                        </span>
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
                                       )}
                                       {conceptMapState === "success" && (
                                         <span
@@ -2727,14 +3223,22 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {!conceptMapState && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#94a3b8" : "#475569",
-                                          }}
-                                        >
-                                          Ready to generate when you are.
-                                        </span>
+                                        !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
                                       )}
                                       {conceptMapRecent.length > 0 && (
                                         <div
@@ -2879,14 +3383,11 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {mcqState === "no-credits" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {noCreditsMessage}
-                                        </span>
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
                                       )}
                                       {mcqState === "success" && (
                                         <span
@@ -2899,14 +3400,22 @@ const readStoredEmail = () => {
                                         </span>
                                       )}
                                       {!mcqState && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#94a3b8" : "#475569",
-                                          }}
-                                        >
-                                          Ready to generate when you are.
-                                        </span>
+                                        !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
                                       )}
                                       {mcqRecent.length > 0 && (
                                         <div
@@ -2958,7 +3467,7 @@ const readStoredEmail = () => {
                                     !hasPdf &&
                                     action !== "Generate presentations" &&
                                     action !== "Generate PDF" &&
-                                    action !== "Lesson Plan" &&
+                                    action !== "Generate Lesson Plan" &&
                                     action !== "Generate Web Page" &&
                                     action !== "Generate Concept Map" &&
                                     action !== "Generate MCQs" && (
@@ -2986,6 +3495,7 @@ const readStoredEmail = () => {
           );
         })}
       </div>
+      )}
     </div>
   );
 }
