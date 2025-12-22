@@ -511,6 +511,84 @@ function generateTopicSpecificSvg(topic, diagramPrompt, subject, index, slideTit
 
   // Chemistry-specific diagrams
   if (subjectLower.includes("chemistry")) {
+    // Werner's Theory of Coordination Compounds
+    if (topicLower.includes("werner") || topicLower.includes("coordination compound")) {
+      return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 500 400">
+        <defs>
+          <marker id="arr${index}" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L9,3 z" fill="#333"/>
+          </marker>
+        </defs>
+        <text x="250" y="30" font-family="Arial" font-size="20" fill="${color}" text-anchor="middle" font-weight="bold">Werner's Theory: Primary & Secondary Valency</text>
+        
+        <!-- Complex example: [Co(NH3)6]Cl3 -->
+        <g transform="translate(120, 100)">
+          <rect x="-80" y="-20" width="160" height="180" rx="8" fill="#e1f5fe" stroke="#01579b" stroke-width="3"/>
+          <text x="0" y="-30" text-anchor="middle" font-size="14" fill="#01579b" font-weight="bold">[Co(NH₃)₆]Cl₃</text>
+          
+          <!-- Square bracket -->
+          <path d="M -60 10 L -70 10 L -70 140 L -60 140" stroke="#333" stroke-width="4" fill="none"/>
+          <path d="M 60 10 L 70 10 L 70 140 L 60 140" stroke="#333" stroke-width="4" fill="none"/>
+          
+          <!-- Central metal ion -->
+          <circle cx="0" cy="75" r="25" fill="${color}" stroke="${color}" stroke-width="3"/>
+          <text x="0" y="82" text-anchor="middle" font-size="16" fill="white" font-weight="bold">Co³⁺</text>
+          
+          <!-- 6 ligands around (secondary valency) -->
+          <circle cx="0" cy="20" r="12" fill="${secondaryColor}" opacity="0.8"/>
+          <text x="0" y="25" text-anchor="middle" font-size="10" fill="white" font-weight="bold">NH₃</text>
+          <line x1="0" y1="32" x2="0" y2="50" stroke="#666" stroke-width="2"/>
+          
+          <circle cx="0" cy="130" r="12" fill="${secondaryColor}" opacity="0.8"/>
+          <text x="0" y="135" text-anchor="middle" font-size="10" fill="white" font-weight="bold">NH₃</text>
+          <line x1="0" y1="118" x2="0" y2="100" stroke="#666" stroke-width="2"/>
+          
+          <circle cx="-45" cy="75" r="12" fill="${secondaryColor}" opacity="0.8"/>
+          <text x="-45" y="80" text-anchor="middle" font-size="9" fill="white" font-weight="bold">NH₃</text>
+          <line x1="-33" y1="75" x2="-25" y2="75" stroke="#666" stroke-width="2"/>
+          
+          <circle cx="45" cy="75" r="12" fill="${secondaryColor}" opacity="0.8"/>
+          <text x="45" y="80" text-anchor="middle" font-size="9" fill="white" font-weight="bold">NH₃</text>
+          <line x1="33" y1="75" x2="25" y2="75" stroke="#666" stroke-width="2"/>
+          
+          <circle cx="-30" cy="40" r="12" fill="${secondaryColor}" opacity="0.8"/>
+          <text x="-30" y="45" text-anchor="middle" font-size="9" fill="white" font-weight="bold">NH₃</text>
+          <line x1="-20" y1="48" x2="-12" y2="60" stroke="#666" stroke-width="2"/>
+          
+          <circle cx="30" cy="40" r="12" fill="${secondaryColor}" opacity="0.8"/>
+          <text x="30" y="45" text-anchor="middle" font-size="9" fill="white" font-weight="bold">NH₃</text>
+          <line x1="20" y1="48" x2="12" y2="60" stroke="#666" stroke-width="2"/>
+          
+          <!-- Outside bracket: 3 Cl- (primary valency) -->
+          <circle cx="90" cy="40" r="10" fill="#10B981" opacity="0.8"/>
+          <text x="90" y="45" text-anchor="middle" font-size="11" fill="white" font-weight="bold">Cl⁻</text>
+          
+          <circle cx="90" cy="75" r="10" fill="#10B981" opacity="0.8"/>
+          <text x="90" y="80" text-anchor="middle" font-size="11" fill="white" font-weight="bold">Cl⁻</text>
+          
+          <circle cx="90" cy="110" r="10" fill="#10B981" opacity="0.8"/>
+          <text x="90" y="115" text-anchor="middle" font-size="11" fill="white" font-weight="bold">Cl⁻</text>
+        </g>
+        
+        <!-- Labels -->
+        <g transform="translate(340, 120)">
+          <rect x="-90" y="0" width="180" height="140" rx="8" fill="#fff3e0" stroke="#e65100" stroke-width="2"/>
+          <text x="0" y="25" text-anchor="middle" font-size="14" fill="#e65100" font-weight="bold">Primary Valency</text>
+          <text x="0" y="45" text-anchor="middle" font-size="11" fill="#333">3 Cl⁻ ions</text>
+          <text x="0" y="60" text-anchor="middle" font-size="11" fill="#333">Ionizable</text>
+          <text x="0" y="75" text-anchor="middle" font-size="11" fill="#333">Outside [ ]</text>
+          
+          <text x="0" y="100" text-anchor="middle" font-size="14" fill="${color}" font-weight="bold">Secondary Valency</text>
+          <text x="0" y="120" text-anchor="middle" font-size="11" fill="#333">6 NH₃ ligands</text>
+          <text x="0" y="135" text-anchor="middle" font-size="11" fill="#333">Inside [ ]</text>
+        </g>
+        
+        <text x="250" y="320" text-anchor="middle" font-size="13" fill="#666" font-style="italic">Coordination Number = 6 (Secondary Valency)</text>
+        <text x="250" y="340" text-anchor="middle" font-size="13" fill="#666" font-style="italic">3 Cl⁻ precipitate with AgNO₃ (Primary Valency)</text>
+        <text x="250" y="375" font-family="Arial" font-size="18" fill="${color}" text-anchor="middle" font-weight="bold">${topic}</text>
+      </svg>`;
+    }
+    
     // Solutions topic - show different aspects based on slide content
     if (topicLower.includes("solution")) {
       // Variation 1: Types of solutions (for index 1, 5, 9... or keywords)
