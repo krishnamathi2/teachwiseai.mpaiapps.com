@@ -2,8 +2,20 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { SUBJECT_FILES } from "../../lib/contentMap";
 import { requestModelContent } from "../../lib/modelProvider";
 import { parseGrade, buildGradeLabel } from "../../lib/gradeUtils";
+import { withAuth, checkRateLimit } from "../../lib/authMiddleware";
 
-export default async function handler(req, res) {
+async function handler(req, res) {
+  // Rate limiting
+  const rateLimitKey = req.auth.user?.id || req.auth.isGuest ? req.headers["x-forwarded-for"] || "guest" : "anonymous";
+  const rateLimit = checkRateLimit(rateLimitKey, 10, 60000);
+
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: "Too many requests",
+      message: "Rate limit exceeded. Please try again later.",
+      resetTime: rateLimit.resetTime,
+    });
+  }
   const { subject, topic, grade } = req.query;
 
   if (req.method !== "GET") {
@@ -46,8 +58,39 @@ export default async function handler(req, res) {
   }
 }
 
+export default withAuth(handler, { allowGuest: true });
+
 function buildMcqPrompt(subject, topic, gradeLabel) {
-  return `You are creating ${gradeLabel} ${subject} practice for ${topic}.\nReturn ONLY valid JSON (no markdown) that matches this schema:\n{\n  "questions": [\n    {\n      "stem": string,\n      "options": [string, string, string, string],\n      "answer": string,\n      "explanation": string\n    }\n  ]\n}\n- Provide 6 to 8 questions.\n- Make each option concise (max 18 words).\n- Use answer letters A, B, C, or D.\n- Keep language classroom friendly and avoid LaTeX.`;
+  return `You are creating ${gradeLabel} ${subject} practice for ${topic}.
+
+IMPORTANT - NCERT CONTENT EXTRACTION:
+- For CBSE board, base these questions on NCERT ${subject} textbook content for ${gradeLabel}
+- Extract question types, concepts, and difficulty levels similar to NCERT exercise questions
+- Focus specifically on "${topic}" - include questions covering all key concepts, formulas, and theorems from the NCERT chapter
+- Create questions that test understanding of definitions, applications, and problem-solving skills as emphasized in NCERT
+- Include both conceptual and numerical questions similar to NCERT exercise patterns
+
+Return ONLY valid JSON (no markdown) that matches this schema:
+{
+  "questions": [
+    {
+      "stem": string,
+      "options": [string, string, string, string],
+      "answer": string,
+      "explanation": string
+    }
+  ]
+}
+
+CRITICAL FORMATTING RULES:
+- Provide 6 to 8 questions covering different aspects of the topic
+- Each question MUST have exactly 4 distinct, content-based options
+- For Math questions about relations/sets: provide actual mathematical answers (like specific sets, values, or expressions), NOT instructional text
+- Make each option concise (max 18 words) but mathematically precise
+- Use answer letters A, B, C, or D
+- Keep language classroom friendly and avoid LaTeX
+- NEVER include meta-instructions or generic phrases like "Apply the definition" or "Choose the property" as answer options
+- All options must be plausible answers to the question stem`;
 }
 
 function parseMcqSet(rawContent, subject, topic, gradeLabel) {
@@ -125,18 +168,25 @@ function normalizeOptions(options) {
 
 function ensureOptionCount(list) {
   const result = [...list];
+  
+  // If we don't have valid options, return null to trigger fallback question generation
+  if (result.length < 2) {
+    return [];
+  }
+
+  // Generate basic fallbacks only if absolutely necessary (should rarely happen with improved prompt)
   const fallbacks = [
-    "Apply the definition directly.",
-    "Use a contrasting example to test understanding.",
-    "Select the property that matches the scenario.",
-    "Choose the option that best fits this topic.",
+    "Option A (content not generated)",
+    "Option B (content not generated)",
+    "Option C (content not generated)",
+    "Option D (content not generated)",
   ];
 
   while (result.length < 4) {
     result.push(fallbacks[result.length] || `Option ${result.length + 1}`);
   }
 
-  return result.slice(0, 4).map((entry) => (entry && entry.trim() ? entry : "Select the statement that aligns."));
+  return result.slice(0, 4).map((entry) => (entry && entry.trim() ? entry : "Option not available"));
 }
 
 function normalizeAnswer(rawAnswer, optionCount) {
@@ -301,23 +351,57 @@ function buildDefaultExplanation(subject, topic, gradeLabel, stem, answerText) {
 }
 
 function buildFallbackSet(subject, topic, rawContent, gradeLabel) {
-  const stemBase = cleanText(rawContent).slice(0, 120) || `${topic} fundamentals in ${subject}`;
-  const templates = [
-    `${stemBase}: identify the correct definition.`,
-    `${stemBase}: choose the property that applies.`,
-    `${stemBase}: select the accurate example.`,
-    `${stemBase}: find the statement that is true.`,
-    `${stemBase}: determine the best application.`,
-    `${stemBase}: evaluate which idea aligns with theory.`,
+  // Create proper fallback questions specific to the topic
+  const questions = [
+    {
+      stem: `What is the basic definition of ${topic} in ${subject}?`,
+      options: [
+        `A fundamental concept in ${gradeLabel} ${subject}`,
+        `An advanced theorem requiring proof`,
+        `A computational technique`,
+        `A graphical representation method`
+      ],
+      answer: "A",
+      answerIndex: 0,
+      explanation: `This question tests understanding of ${topic} fundamentals as taught in ${gradeLabel} ${subject}.`,
+    },
+    {
+      stem: `Which of the following best describes ${topic}?`,
+      options: [
+        `A key concept studied in ${subject}`,
+        `An optional supplementary topic`,
+        `A historical reference only`,
+        `An alternative notation system`
+      ],
+      answer: "A",
+      answerIndex: 0,
+      explanation: `Understanding ${topic} is essential for ${gradeLabel} ${subject}.`,
+    },
+    {
+      stem: `In the context of ${subject}, ${topic} is primarily used to:`,
+      options: [
+        `Solve problems and understand relationships`,
+        `Memorize formulas`,
+        `Draw diagrams only`,
+        `Replace all other methods`
+      ],
+      answer: "A",
+      answerIndex: 0,
+      explanation: `${topic} helps in problem-solving within ${subject}.`,
+    },
+    {
+      stem: `When working with ${topic} in ${subject}, what is most important?`,
+      options: [
+        `Understanding the underlying concepts`,
+        `Speed of calculation`,
+        `Using specific software`,
+        `Memorizing all variations`
+      ],
+      answer: "A",
+      answerIndex: 0,
+      explanation: `Conceptual understanding is key to mastering ${topic}.`,
+    },
   ];
-
-  const questions = templates.slice(0, 6).map((stem) => ({
-    stem,
-    options: ensureOptionCount([]),
-    answer: "A",
-    answerIndex: 0,
-    explanation: `Option A captures the essential point for ${topic} in ${gradeLabel}.`,
-  }));
 
   return { questions };
 }
