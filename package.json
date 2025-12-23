@@ -5,17 +5,28 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "lint": "next lint",
+    "deploy": "git add -A && git diff-index --quiet HEAD || git commit -m \"Deploy: $(date +\"%Y-%m-%d %H:%M\")\" && git push origin main && vercel --prod",
+    "deploy:message": "npm run git:commit && git push origin main && vercel --prod",
+    "git:commit": "git add -A && git commit"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.45.3",
+    "lint": "^0.8.19",
     "next": "13.5.6",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.28.4",
+    "pdf-lib": "1.17.1",
+    "pdf-parse": "1.1.1",
+    "pdfjs-dist": "3.11.174",
+    "pptxgenjs": "3.12.0",
     "react": "18.2.0",
     "react-dom": "18.2.0",
-    "pdfjs-dist": "3.11.174",
-    "pdf-parse": "1.1.1",
-    "pptxgenjs": "3.12.0",
-    "pdf-lib": "1.17.1",
-    "openai": "^4.28.4"
+    "vercel": "^49.2.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "eslint-config-next": "13.5.6"
   }
 }
