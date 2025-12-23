@@ -1,144 +1,58 @@
-/* eslint-disable */
-
-import PptxGenJS from "pptxgenjs";
-import { buildGradeLabel } from "../../lib/gradeUtils";
-import { buildLessonWithAI } from "../../lib/openaiLesson";
-import { generateTopicSpecificSvg } from "../../lib/svgGenerator";
-
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" });
+    return res.status(405).json({ error: "Method not allowed" });
   }
-
-  const {
-    subject,
-    topic,
-    grade,
-    slideCount = 8,
-    imageCount = 0,
-    useGPTI = false,
-    board = "CBSE",
-  } = req.body;
 
   try {
-    const gradeLabel = buildGradeLabel(grade);
-
-    const lesson = await buildLessonWithAI({
-      board,
-      classLevel: gradeLabel,
+    const {
       subject,
+      grade,
       topic,
-      requestedSlideCount: slideCount,
-      language: "English",
-    });
+      slideCount = 8
+    } = req.body;
 
-    const pptx = new PptxGenJS();
-    pptx.layout = "LAYOUT_WIDE";
+    const slides = [];
 
-    const slides = lesson.slides || [];
-    const maxImages = Math.min(imageCount, slides.length);
-
-    for (let i = 0; i < slides.length; i++) {
-      const slideData = slides[i];
-      const slide = pptx.addSlide();
-
-      // TITLE
-      slide.addText(slideData.title || topic, {
-        x: 0.5,
-        y: 0.3,
-        w: "90%",
-        fontSize: 36,
-        bold: true,
+    for (let i = 0; i < slideCount; i++) {
+      slides.push({
+        title: `${topic} – Slide ${i + 1}`,
+        content: `Explanation of ${topic} for Grade ${grade} (${subject}).`
       });
-
-      // SUBTITLE
-      slide.addText(
-        slideData.type
-          ? slideData.type.replace(/_/g, " ").toUpperCase()
-          : "CONCEPT",
-        {
-          x: 0.5,
-          y: 1.1,
-          w: "90%",
-          fontSize: 22,
-          color: "3B82F6",
-        }
-      );
-
-      const diagramPrompt =
-        slideData.content?.diagramPrompt || `${topic} diagram`;
-
-      const shouldUseGPTI = useGPTI && i < maxImages;
-
-      if (shouldUseGPTI) {
-        try {
-          const { generateSlideImageGPT4o } = await import(
-            "../../lib/gpt4oImageApi"
-          );
-
-          const base64 = await generateSlideImageGPT4o({
-            subject,
-            topic,
-            slideTitle: slideData.title,
-            slideType: slideData.type,
-            index: i,
-          });
-
-          slide.addImage({
-            data: `data:image/png;base64,${base64}`,
-            x: 0.5,
-            y: 1.7,
-            w: 5.5,
-            h: 5,
-          });
-        } catch (err) {
-          addSvg(slide, i);
-        }
-      } else {
-        addSvg(slide, i);
-      }
-
-      function addSvg(slideRef, slideIndex) {
-        const svg = generateTopicSpecificSvg(
-          topic,
-          diagramPrompt,
-          subject,
-          slideIndex,
-          slideData.title,
-          slideData.type
-        );
-
-        slideRef.addImage({
-          data: `data:image/svg+xml;base64,${Buffer.from(svg).toString(
-            "base64"
-          )}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-        });
-      }
-
-      slide.addText(
-        (slideData.content?.bullets || []).join("\n\n"),
-        {
-          x: 6.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          fontSize: 14,
-        }
-      );
     }
 
-    const buffer = await pptx.write({ outputType: "nodebuffer" });
-
-    res.status(200).json({
-      base64: buffer.toString("base64"),
-      filename: `${subject}-${topic}.pptx`,
+    // ✅ SVG generation (index SAFE)
+    const svgs = slides.map((slide, index) => {
+      return generateSVG(slide, index);
     });
+
+    res.status(200).json({ svgs });
   } catch (err) {
-    console.error("PPT generation failed:", err);
-    res.status(500).json({ message: err.message });
+    console.error("presentation-svg error:", err);
+    res.status(500).json({ error: err.message });
   }
+}
+
+function generateSVG(slide, index) {
+  return `
+<svg width="960" height="540" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100%" height="100%" fill="#0f172a"/>
+  <text x="50%" y="80" text-anchor="middle"
+        font-size="36" fill="#ffffff"
+        font-family="Arial, Helvetica, sans-serif">
+    Slide ${index + 1}: ${escape(slide.title)}
+  </text>
+  <text x="50%" y="160" text-anchor="middle"
+        font-size="22" fill="#e5e7eb"
+        font-family="Arial, Helvetica, sans-serif">
+    ${escape(slide.content)}
+  </text>
+</svg>
+`;
+}
+
+function escape(text = "") {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
