@@ -1,8 +1,20 @@
 import { SUBJECT_FILES } from "../../lib/contentMap";
 import { requestModelContent } from "../../lib/modelProvider";
 import { parseGrade, buildGradeLabel } from "../../lib/gradeUtils";
+import { withAuth, checkRateLimit } from "../../lib/authMiddleware";
 
-export default async function handler(req, res) {
+async function handler(req, res) {
+  // Rate limiting
+  const rateLimitKey = req.auth.user?.id || req.auth.isGuest ? req.headers["x-forwarded-for"] || "guest" : "anonymous";
+  const rateLimit = checkRateLimit(rateLimitKey, 10, 60000);
+
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: "Too many requests",
+      message: "Rate limit exceeded. Please try again later.",
+      resetTime: rateLimit.resetTime,
+    });
+  }
   const { subject, topic, grade } = req.query;
 
   if (req.method !== "GET") {
@@ -50,8 +62,19 @@ export default async function handler(req, res) {
   }
 }
 
+export default withAuth(handler, { allowGuest: true });
+
 function buildWebPagePrompt(subject, topic, gradeLabel) {
   return `You are preparing a simple educational landing page for ${gradeLabel} ${subject} students about ${topic}.
+
+IMPORTANT - CONTENT EXTRACTION:
+- If this is for CBSE board, base your content on NCERT ${subject} textbook for ${gradeLabel}
+- Focus specifically on the "${topic}" section/chapter from the NCERT curriculum
+- Extract and summarize the most relevant concepts, definitions, formulas, and examples related to "${topic}"
+- For topics like "Maxima and Minima", "Differentiation", "Integration", etc., extract the specific theory, formulas, and worked examples from the relevant NCERT chapter
+- Present the content in a clear, student-friendly format suitable for a web page
+- Include key definitions, theorems, formulas, and important points as they appear in NCERT
+
 Respond ONLY with valid JSON (no markdown) following this schema:
 {
   "title": string,
@@ -71,19 +94,29 @@ Respond ONLY with valid JSON (no markdown) following this schema:
   "conclusion": string,
   "callToAction": string
 }
-Keep sentences concise, classroom friendly, and avoid markdown or LaTeX commands. Provide 2-4 sections, each with 3-5 bullet sentences.`;
+Keep sentences concise, classroom friendly, and avoid markdown or LaTeX commands. Provide 3-5 sections, each with 3-6 bullet sentences covering different aspects of the topic.`;
 }
 
 function parseWebPagePlan(rawContent, subject, topic, gradeLabel) {
-  const cleaned = rawContent
+  let cleaned = rawContent
     .replace(/```json/gi, "")
     .replace(/```/g, "")
     .trim();
 
+  // Try to extract JSON from text if it's embedded
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    cleaned = jsonMatch[0];
+  }
+
+  cleaned = cleaned.normalize("NFKC");
+
   let parsed;
   try {
-    parsed = JSON.parse(cleaned);
+    parsed = safeParseJson(cleaned);
   } catch (error) {
+    console.error("Failed to parse web page JSON:", error.message);
+    console.log("Raw content:", cleaned.substring(0, 200));
     return buildFallbackPlan(subject, topic, cleaned, gradeLabel);
   }
 
@@ -131,28 +164,86 @@ function parseWebPagePlan(rawContent, subject, topic, gradeLabel) {
 }
 
 function buildFallbackPlan(subject, topic, rawContent, gradeLabel) {
-  const lines = rawContent
+  // Try one more time to parse if it looks like JSON
+  if (rawContent.includes('"title"') && rawContent.includes('"intro"')) {
+    try {
+      // Try to fix common JSON issues
+      let fixedContent = rawContent
+        .replace(/[\u0000-\u001F]/g, '') // Remove control characters
+        .replace(/,(\s*[}\]])/g, '$1')    // Remove trailing commas
+        .trim();
+      
+      const parsed = JSON.parse(fixedContent);
+      if (parsed.title || parsed.intro) {
+        // Successfully parsed, return properly formatted
+        return {
+          title: sanitizeText(parsed?.title) || `${subject}: ${topic}`,
+          intro: sanitizeText(parsed?.intro) || `Explore the essentials of ${topic} in ${gradeLabel} ${subject}.`,
+          sections: Array.isArray(parsed?.sections) ? parsed.sections.map((section) => ({
+            heading: sanitizeText(section?.heading) || "Key Ideas",
+            bullets: normalizeStrings(section?.bullets),
+          })).filter((section) => section.bullets.length > 0) : [{
+            heading: "Key Concepts",
+            bullets: [
+              `Understanding ${topic} in ${subject}`,
+              "Key definitions and formulas",
+              "Practical applications and examples"
+            ]
+          }],
+          keyTerms: Array.isArray(parsed?.keyTerms) ? parsed.keyTerms.map((entry) => ({
+            term: sanitizeText(entry?.term),
+            definition: sanitizeText(entry?.definition),
+          })).filter((entry) => entry.term && entry.definition) : [],
+          conclusion: sanitizeText(parsed?.conclusion) || `Master ${topic} through regular practice.`,
+          callToAction: sanitizeText(parsed?.callToAction) || "Practice more problems to strengthen understanding.",
+        };
+      }
+    } catch (e) {
+      // Continue to text-based fallback
+    }
+  }
+  
+  // Extract meaningful content from malformed JSON
+  const contentLines = rawContent
     .split("\n")
     .map((line) => sanitizeText(line))
-    .filter(Boolean);
+    .filter(Boolean)
+    .filter(line => {
+      // Skip pure JSON structural elements
+      const stripped = line.trim();
+      return !(/^[\[{\]},]*$/.test(stripped)) && 
+             !(stripped === '"sections": [') &&
+             !(stripped === '"bullets": [') &&
+             !(stripped === '"keyTerms": [') &&
+             !stripped.startsWith('"title":') &&
+             !stripped.startsWith('"intro":') &&
+             !stripped.startsWith('"heading":') &&
+             !stripped.startsWith('"conclusion":') &&
+             !stripped.startsWith('"callToAction":');
+    });
 
-  const bullets = lines.slice(0, 5).map((line) => line.replace(/^[-•]\s*/, ""));
+  const bullets = contentLines
+    .map((line) => stripJsonLine(line.replace(/^[-•]\s*/, "")))
+    .filter(line => line && line.length > 10) // Only keep substantial content
+    .slice(0, 6);
 
   return {
-    title: `${subject}: ${topic}`,
-    intro: lines[0] || `Explore the essentials of ${topic} in ${gradeLabel} ${subject}.`,
+    title: `${gradeLabel} ${subject}: ${topic}`,
+    intro: `Explore the important concepts of ${topic} from the NCERT ${gradeLabel} ${subject} curriculum.`,
     sections: [
       {
-        heading: "Key Takeaways",
+        heading: "Key Concepts",
         bullets: bullets.length > 0 ? bullets : [
-          `Introduce the concept of ${topic}.`,
-          "Explain the main properties with one example.",
+          `Understanding the fundamentals of ${topic}`,
+          "Key definitions and theorems",
+          "Important formulas and their applications",
+          "Step-by-step problem-solving techniques"
         ],
       },
     ],
     keyTerms: [],
-    conclusion: lines[5] || `Keep revisiting the concept to build mastery in ${gradeLabel.toLowerCase()}.`,
-    callToAction: lines[6] || "Discuss this topic with your classmates and teacher.",
+    conclusion: `Master ${topic} through consistent practice and revision of NCERT concepts.`,
+    callToAction: "Solve NCERT exercises to strengthen your understanding.",
   };
 }
 
@@ -162,6 +253,12 @@ function buildHtmlDocument(plan, subject, topic, gradeLabel) {
   const conclusion = escapeHtml(plan.conclusion);
   const cta = escapeHtml(plan.callToAction);
   const gradeSubtitle = escapeHtml(`${gradeLabel} ${subject}`);
+  
+  // Generate NCERT link based on subject and grade
+  const subjectSlug = subject.toLowerCase().replace(/\s+/g, '-');
+  const topicSlug = topic.toLowerCase().replace(/\s+/g, '-');
+  const gradeNum = gradeLabel.toLowerCase().replace('grade ', '').replace('class ', '');
+  const ncertLink = `https://ncert.nic.in/textbook.php?ke${gradeNum}=${subjectSlug}`;
 
   const sectionHtml = plan.sections
     .map((section) => {
@@ -277,6 +374,11 @@ function buildHtmlDocument(plan, subject, topic, gradeLabel) {
         color: #ffffff;
         text-decoration: none;
         font-weight: 600;
+        transition: background 0.2s ease;
+        cursor: pointer;
+      }
+      .cta:hover {
+        background: #1d4ed8;
       }
     </style>
   </head>
@@ -293,30 +395,95 @@ function buildHtmlDocument(plan, subject, topic, gradeLabel) {
       </div>
       <footer>
         <p>${conclusion}</p>
-        <div class="cta" role="button">${cta}</div>
+        <a href="${ncertLink}" class="cta" target="_blank" rel="noopener noreferrer">${cta}</a>
       </footer>
     </main>
   </body>
 </html>`;
 }
 
+const VALUE_ONLY_KEYS = new Set(["text", "description", "detail", "content", "point", "note", "summary", "explanation", "example"]);
+
 function normalizeStrings(value) {
-  if (!value) {
-    return [];
-  }
+  const results = [];
 
-  if (Array.isArray(value)) {
-    return value.map((item) => sanitizeText(item)).filter(Boolean);
-  }
+  const collect = (item) => {
+    if (item == null) {
+      return;
+    }
 
-  if (typeof value === "string") {
-    return value
-      .split(/[;\n]/)
-      .map((item) => sanitizeText(item))
-      .filter(Boolean);
-  }
+    if (typeof item === "string") {
+      const trimmed = item.trim();
 
-  return [];
+      if (looksLikeJson(trimmed)) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          collect(parsed);
+          return;
+        } catch (error) {
+          // Fall through to treat as plain text
+        }
+      }
+
+      trimmed
+        .split(/[;\n]/)
+        .map((part) => sanitizeText(part))
+        .filter(Boolean)
+        .forEach((text) => {
+          results.push(text);
+        });
+      return;
+    }
+
+    if (typeof item === "number" || typeof item === "boolean") {
+      const text = sanitizeText(String(item));
+      if (text) {
+        results.push(text);
+      }
+      return;
+    }
+
+    if (Array.isArray(item)) {
+      item.forEach(collect);
+      return;
+    }
+
+    if (typeof item === "object") {
+      Object.entries(item).forEach(([key, val]) => {
+        if (val == null) {
+          return;
+        }
+
+        if (typeof val === "string" || typeof val === "number" || typeof val === "boolean") {
+          const keyText = sanitizeText(key);
+          const valueText = sanitizeText(String(val));
+
+          if (valueText) {
+            const normalizedKey = typeof key === "string" ? key.trim().toLowerCase() : "";
+            if (keyText && VALUE_ONLY_KEYS.has(normalizedKey)) {
+              results.push(valueText);
+            } else {
+              results.push(keyText ? `${keyText}: ${valueText}` : valueText);
+            }
+          }
+          return;
+        }
+
+        collect(val);
+      });
+    }
+  };
+
+  collect(value);
+  return results;
+}
+
+function looksLikeJson(value) {
+  const trimmed = value.trim();
+  return (
+    (trimmed.startsWith("{") && trimmed.endsWith("}")) ||
+    (trimmed.startsWith("[") && trimmed.endsWith("]"))
+  );
 }
 
 function sanitizeText(value) {
@@ -342,4 +509,57 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function safeParseJson(text) {
+  const candidates = Array.from(
+    new Set([
+      text,
+      normalizeJsonQuotes(text),
+      removeTrailingCommas(normalizeJsonQuotes(text)),
+    ])
+  ).filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      // Try next candidate
+    }
+  }
+
+  throw new Error("Invalid JSON structure");
+}
+
+function normalizeJsonQuotes(value) {
+  return value
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .normalize("NFKC");
+}
+
+function removeTrailingCommas(value) {
+  return value.replace(/,(\s*[}\]])/g, "$1");
+}
+
+function stripJsonLine(line) {
+  let cleaned = line
+    .replace(/^"[^"]+"\s*:\s*/, "")
+    .replace(/^'[^']+'\s*:\s*/, "")
+    .replace(/[",]$/g, "")
+    .trim();
+
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
+    cleaned = cleaned.slice(1, -1).trim();
+  }
+
+  if (/^[\[\]{}]*$/.test(cleaned)) {
+    return "";
+  }
+
+  return cleaned;
 }

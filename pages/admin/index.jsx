@@ -310,7 +310,7 @@ export default function AdminPage() {
       window.removeEventListener(AUTH_STATE_EVENT, handleInternalEvent);
       subscription?.unsubscribe?.();
     };
-  }, [knownAdminEmails, supabase]);
+  }, [knownAdminEmails]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();

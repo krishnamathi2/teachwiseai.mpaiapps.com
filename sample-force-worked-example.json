@@ -1,0 +1,136 @@
+{
+  "meta": {
+    "board": "CBSE",
+    "classLevel": "Grade 11",
+    "subject": "Physics",
+    "topic": "Newton's Laws of Motion",
+    "periodMinutes": 40,
+    "language": "English",
+    "focus": ["Newton's Second Law", "Force Calculation", "Problem Solving"]
+  },
+  "slides": [
+    {
+      "id": "slide-1",
+      "type": "title_hook",
+      "title": "Newton's Laws of Motion",
+      "content": {
+        "subtitle": "Understanding Force and Motion",
+        "hookQuestion": "Why does a heavier object require more force to move?",
+        "imagePrompt": "A person pushing a light box vs a heavy box"
+      }
+    },
+    {
+      "id": "slide-2",
+      "type": "concept",
+      "title": "Newton's Second Law of Motion",
+      "content": {
+        "bullets": [
+          "Force is directly proportional to the product of mass and acceleration",
+          "Mathematical formula: F = ma",
+          "F represents force in Newtons (N)",
+          "m represents mass in kilograms (kg)",
+          "a represents acceleration in meters per second squared (m/s²)"
+        ],
+        "diagramPrompt": "Vector diagram showing force, mass, and acceleration relationship with arrows"
+      }
+    },
+    {
+      "id": "slide-3",
+      "type": "worked_example",
+      "title": "Worked Example: Calculating Force",
+      "content": {
+        "workedExample": {
+          "question": "A car of mass 1200 kg accelerates from rest to 20 m/s in 5 seconds. Calculate the net force acting on the car.",
+          "given": [
+            "Mass (m) = 1200 kg",
+            "Initial velocity (u) = 0 m/s (starting from rest)",
+            "Final velocity (v) = 20 m/s",
+            "Time (t) = 5 seconds"
+          ],
+          "solutionSteps": [
+            "First, calculate acceleration using: a = (v - u) / t",
+            "a = (20 - 0) / 5 = 20 / 5 = 4 m/s²",
+            "Now apply Newton's Second Law: F = ma",
+            "F = 1200 kg × 4 m/s²",
+            "F = 4800 N"
+          ],
+          "finalAnswer": "The net force acting on the car is 4800 N (or 4.8 kN)"
+        },
+        "diagramPrompt": "Side view of a car with arrows showing initial position, final position, and force direction"
+      }
+    },
+    {
+      "id": "slide-4",
+      "type": "worked_example",
+      "title": "Worked Example: Finding Mass",
+      "content": {
+        "workedExample": {
+          "question": "A force of 150 N causes an object to accelerate at 5 m/s². What is the mass of the object?",
+          "given": [
+            "Force (F) = 150 N",
+            "Acceleration (a) = 5 m/s²",
+            "Mass (m) = ?"
+          ],
+          "solutionSteps": [
+            "Using Newton's Second Law: F = ma",
+            "Rearrange to solve for mass: m = F / a",
+            "Substitute the given values: m = 150 N / 5 m/s²",
+            "Calculate: m = 30 kg"
+          ],
+          "finalAnswer": "The mass of the object is 30 kg"
+        },
+        "notes": "Remember to always check units: Force in Newtons, mass in kilograms, acceleration in m/s²"
+      }
+    },
+    {
+      "id": "slide-5",
+      "type": "questions_quick_check",
+      "title": "Practice Questions",
+      "content": {
+        "questionSet": [
+          {
+            "type": "mcq",
+            "stem": "A 50 kg object accelerates at 2 m/s². What is the net force?",
+            "options": [
+              "25 N",
+              "50 N",
+              "100 N",
+              "200 N"
+            ],
+            "correctOptionIndex": 2,
+            "explanation": "F = ma = 50 kg × 2 m/s² = 100 N"
+          },
+          {
+            "type": "mcq",
+            "stem": "If force doubles while mass remains constant, acceleration will:",
+            "options": [
+              "Remain the same",
+              "Double",
+              "Halve",
+              "Become zero"
+            ],
+            "correctOptionIndex": 1,
+            "explanation": "Since F = ma, if F doubles and m is constant, a must also double"
+          }
+        ]
+      }
+    },
+    {
+      "id": "slide-6",
+      "type": "summary_exit_ticket",
+      "title": "Summary & Exit Ticket",
+      "content": {
+        "summaryPoints": [
+          "Newton's Second Law: F = ma relates force, mass, and acceleration",
+          "Force is measured in Newtons (N)",
+          "Greater mass requires greater force for the same acceleration",
+          "The formula can be rearranged to find any unknown variable"
+        ],
+        "activity": {
+          "prompt": "A 10 kg box is pushed with a force of 40 N. Calculate the acceleration of the box. Show your work!",
+          "expectedTimeMinutes": 3
+        }
+      }
+    }
+  ]
+}

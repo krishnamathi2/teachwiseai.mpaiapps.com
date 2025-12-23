@@ -137,6 +137,29 @@ const startCreditPurchaseFlow = (router, isGuestUser) => {
   router.push(target).catch(() => {});
 };
 
+/**
+ * Helper to get auth headers for API requests
+ * Returns headers with authentication token or guest mode indicator
+ */
+const getAuthHeaders = async (isGuestUser) => {
+  const headers = {};
+
+  if (isGuestUser) {
+    headers["x-guest-mode"] = "true";
+  } else if (supabase) {
+    try {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session?.access_token) {
+        headers["Authorization"] = `Bearer ${data.session.access_token}`;
+      }
+    } catch (error) {
+      console.warn("Failed to get auth token", error);
+    }
+  }
+
+  return headers;
+};
+
 const COUNTRY_OPTIONS = [
   {
     id: "india",
@@ -159,11 +182,52 @@ const COUNTRY_OPTIONS = [
 
 const BOARD_OPTIONS = [
   { id: "cbse", label: "CBSE" },
+  { id: "icse", label: "ICSE" },
+  { id: "ib", label: "IB (International Baccalaureate)" },
   { id: "state", label: "State Boards" },
 ];
 
 const BOARD_ROUTE_MAP = {
   cbse: "/cbse",
+};
+
+const BOARD_OFFICIAL_WEBSITES = {
+  cbse: "https://www.cbse.gov.in/",
+  icse: "https://www.cisce.org/",
+  ib: "https://www.ibo.org/",
+  state: null,
+};
+
+const STATE_BOARD_WEBSITES = {
+  "Tamil Nadu": "https://www.tn.gov.in/schooleducation",
+  "Karnataka": "https://kseeb.karnataka.gov.in/",
+  "Kerala": "https://www.education.kerala.gov.in/",
+  "Maharashtra": "https://mahahsscboard.in/",
+  "Gujarat": "https://gseb.org/",
+  "Andhra Pradesh": "https://bse.ap.gov.in/",
+  "Telangana": "https://bse.telangana.gov.in/",
+  "Rajasthan": "https://rajeduboard.rajasthan.gov.in/",
+  "Uttar Pradesh": "https://upmsp.edu.in/",
+  "Madhya Pradesh": "https://mpbse.nic.in/",
+  "West Bengal": "https://wbbse.wb.gov.in/",
+  "Bihar": "https://biharboardonline.bihar.gov.in/",
+  "Odisha": "https://bseodisha.ac.in/",
+  "Punjab": "https://pseb.ac.in/",
+  "Haryana": "https://bseh.org.in/",
+  "Chhattisgarh": "https://cgbse.nic.in/",
+  "Jharkhand": "https://jac.jharkhand.gov.in/",
+  "Assam": "https://sebaonline.org/",
+  "Uttarakhand": "https://ubse.uk.gov.in/",
+  "Himachal Pradesh": "https://hpbose.org/",
+  "Jammu & Kashmir": "https://jkbose.nic.in/",
+  "Goa": "https://gbshse.info/",
+  "Tripura": "https://tbse.tripura.gov.in/",
+  "Meghalaya": "https://mbose.in/",
+  "Manipur": "https://bsem.nic.in/",
+  "Nagaland": "https://nbsenagaland.com/",
+  "Sikkim": "https://www.sikkimhrdd.org/",
+  "Arunachal Pradesh": "https://arunachalpradesh.gov.in/education.html",
+  "Mizoram": "https://mbse.edu.in/",
 };
 
 const DEFAULT_BOARD_SELECTIONS = BOARD_OPTIONS.reduce((acc, option) => {
@@ -174,12 +238,33 @@ const DEFAULT_BOARD_SELECTIONS = BOARD_OPTIONS.reduce((acc, option) => {
 const STATE_BOARD_OPTIONS = [
   "Tamil Nadu",
   "Karnataka",
-  "Telangana",
-  "Andhra Pradesh",
-  "Bihar",
   "Kerala",
   "Maharashtra",
   "Gujarat",
+  "Andhra Pradesh",
+  "Telangana",
+  "Rajasthan",
+  "Uttar Pradesh",
+  "Madhya Pradesh",
+  "West Bengal",
+  "Bihar",
+  "Odisha",
+  "Punjab",
+  "Haryana",
+  "Chhattisgarh",
+  "Jharkhand",
+  "Assam",
+  "Uttarakhand",
+  "Himachal Pradesh",
+  "Jammu & Kashmir",
+  "Goa",
+  "Tripura",
+  "Meghalaya",
+  "Manipur",
+  "Nagaland",
+  "Sikkim",
+  "Arunachal Pradesh",
+  "Mizoram",
 ];
 
 const DEFAULT_STATE_SELECTIONS = STATE_BOARD_OPTIONS.reduce((acc, label) => {
@@ -277,53 +362,50 @@ const CreditCounterBadge = ({
   );
 };
 
-const GRADE_CONFIGS = [
-  {
-    id: "grade12",
-    label: "Grade 12",
-    number: 12,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-  {
-    id: "grade11",
-    label: "Grade 11",
-    number: 11,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-  {
-    id: "grade10",
-    label: "Grade 10",
-    number: 10,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-  {
-    id: "grade9",
-    label: "Grade 9",
-    number: 9,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-  {
-    id: "grade8",
-    label: "Grade 8",
-    number: 8,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-  {
-    id: "grade7",
-    label: "Grade 7",
-    number: 7,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-  {
-    id: "grade6",
-    label: "Grade 6",
-    number: 6,
-    subjects: ["Maths", "Physics", "Chemistry", "Biology"],
-  },
-];
+// Grade configurations by board
+const BOARD_GRADE_CONFIGS = {
+  cbse: [
+    { id: "grade12", label: "Grade 12", number: 12, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "Economics", "Business Studies", "Accountancy", "English", "History", "Geography", "Political Science", "Psychology", "Sociology"] },
+    { id: "grade11", label: "Grade 11", number: 11, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "Economics", "Business Studies", "Accountancy", "English", "History", "Geography", "Political Science", "Psychology", "Sociology"] },
+    { id: "grade10", label: "Grade 10", number: 10, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "English", "Hindi", "Social Science", "History", "Geography", "Political Science", "Economics"] },
+    { id: "grade9", label: "Grade 9", number: 9, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "English", "Hindi", "Social Science", "History", "Geography", "Political Science", "Economics"] },
+    { id: "grade8", label: "Grade 8", number: 8, subjects: ["Maths", "Science", "English", "Hindi", "Social Science", "History", "Geography", "Civics", "Computer Science"] },
+    { id: "grade7", label: "Grade 7", number: 7, subjects: ["Maths", "Science", "English", "Hindi", "Social Science", "History", "Geography", "Civics", "Computer Science"] },
+    { id: "grade6", label: "Grade 6", number: 6, subjects: ["Maths", "Science", "English", "Hindi", "Social Science", "History", "Geography", "Civics", "Computer Science"] },
+  ],
+  icse: [
+    { id: "grade10", label: "Grade 10 (ICSE)", number: 10, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Applications", "English", "Hindi", "History & Civics", "Geography", "Economics", "Commercial Studies", "Environmental Science"] },
+    { id: "grade9", label: "Grade 9", number: 9, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Applications", "English", "Hindi", "History & Civics", "Geography", "Economics", "Commercial Studies"] },
+    { id: "grade8", label: "Grade 8", number: 8, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Applications", "English", "Hindi", "History & Civics", "Geography"] },
+    { id: "grade7", label: "Grade 7", number: 7, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Applications", "English", "Hindi", "History & Civics", "Geography"] },
+    { id: "grade6", label: "Grade 6", number: 6, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Applications", "English", "Hindi", "History & Civics", "Geography"] },
+  ],
+  ib: [
+    { id: "grade12", label: "IB Year 2 (Grade 12)", number: 12, subjects: ["Mathematics (Analysis & Approaches)", "Mathematics (Applications & Interpretation)", "Physics", "Chemistry", "Biology", "Computer Science", "Economics", "Business Management", "English A", "English B", "History", "Geography", "Psychology", "Environmental Systems"] },
+    { id: "grade11", label: "IB Year 1 (Grade 11)", number: 11, subjects: ["Mathematics (Analysis & Approaches)", "Mathematics (Applications & Interpretation)", "Physics", "Chemistry", "Biology", "Computer Science", "Economics", "Business Management", "English A", "English B", "History", "Geography", "Psychology", "Environmental Systems"] },
+    { id: "grade10", label: "Grade 10 (Pre-IB/MYP 5)", number: 10, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "English", "Language Acquisition", "Individuals & Societies", "Arts", "Physical & Health Education"] },
+    { id: "grade9", label: "Grade 9 (MYP 4)", number: 9, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "English", "Language Acquisition", "Individuals & Societies", "Arts", "Physical & Health Education"] },
+    { id: "grade8", label: "Grade 8 (MYP 3)", number: 8, subjects: ["Maths", "Science", "English", "Language Acquisition", "Individuals & Societies", "Arts", "Physical & Health Education", "Design"] },
+    { id: "grade7", label: "Grade 7 (MYP 2)", number: 7, subjects: ["Maths", "Science", "English", "Language Acquisition", "Individuals & Societies", "Arts", "Physical & Health Education", "Design"] },
+    { id: "grade6", label: "Grade 6 (MYP 1)", number: 6, subjects: ["Maths", "Science", "English", "Language Acquisition", "Individuals & Societies", "Arts", "Physical & Health Education", "Design"] },
+  ],
+  state: [
+    { id: "grade12", label: "Grade 12", number: 12, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "Economics", "Business Studies", "Accountancy", "English", "History", "Geography", "Political Science", "Psychology", "Sociology"] },
+    { id: "grade11", label: "Grade 11", number: 11, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "Economics", "Business Studies", "Accountancy", "English", "History", "Geography", "Political Science", "Psychology", "Sociology"] },
+    { id: "grade10", label: "Grade 10", number: 10, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "English", "Regional Language", "Social Science", "History", "Geography", "Political Science", "Economics"] },
+    { id: "grade9", label: "Grade 9", number: 9, subjects: ["Maths", "Physics", "Chemistry", "Biology", "Computer Science", "English", "Regional Language", "Social Science", "History", "Geography", "Political Science", "Economics"] },
+    { id: "grade8", label: "Grade 8", number: 8, subjects: ["Maths", "Science", "English", "Regional Language", "Social Science", "History", "Geography", "Civics", "Computer Science"] },
+    { id: "grade7", label: "Grade 7", number: 7, subjects: ["Maths", "Science", "English", "Regional Language", "Social Science", "History", "Geography", "Civics", "Computer Science"] },
+    { id: "grade6", label: "Grade 6", number: 6, subjects: ["Maths", "Science", "English", "Regional Language", "Social Science", "History", "Geography", "Civics", "Computer Science"] },
+  ],
+};
 
-const GRADE_NUMBER_MAP = GRADE_CONFIGS.reduce((accumulator, config) => {
-  if (config?.id) {
+// Default to CBSE for backward compatibility
+const GRADE_CONFIGS = BOARD_GRADE_CONFIGS.cbse;
+
+// Build grade number map from all boards (use CBSE as base since it has all grades)
+const GRADE_NUMBER_MAP = Object.values(BOARD_GRADE_CONFIGS).flat().reduce((accumulator, config) => {
+  if (config?.id && !accumulator[config.id]) {
     accumulator[config.id] = config?.number ?? config?.label ?? config.id;
   }
   return accumulator;
@@ -342,13 +424,29 @@ const SUBJECT_PDF_ACTIONS = {
 };
 
 const SUBJECT_ACTIONS = [
-  "Generate presentations",
   "Generate PDF",
   "Generate Lesson Plan",
   "Generate Web Page",
   "Generate Concept Map",
   "Generate MCQs",
 ];
+
+const MAX_PRESENTATION_SLIDES = 100;
+
+const getInitialSubjectPresentationState = () => ({
+  enabled: false,
+  highResImages: false,
+  svgAssets: false,
+  useCraiyon: false,
+  useGPTI: false,
+  useCG: false,
+  slideCount: "8",
+  topic: "",
+  gptiTopic: "",
+  cgTopic: "",
+  status: "idle",
+  error: null,
+});
 
 const NoCreditsInlinePrompt = ({ message, onAddCredits, theme }) => {
   if (!message) {
@@ -398,13 +496,18 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
   const containerRef = useRef(null);
 
   useEffect(() => {
+    const containerElement = containerRef.current;
     let canceled = false;
 
+    const clearContainer = () => {
+      if (containerElement) {
+        containerElement.innerHTML = "";
+      }
+    };
+
     const renderPdf = async () => {
-      if (!base64Data || !containerRef.current) {
-        if (containerRef.current) {
-          containerRef.current.innerHTML = "";
-        }
+      if (!base64Data || !containerElement) {
+        clearContainer();
         return;
       }
 
@@ -428,16 +531,15 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
         }
 
         const pdfDoc = await getDocument({ data: bytes }).promise;
-        if (canceled || !containerRef.current) {
+        if (canceled || !containerElement) {
           return;
         }
 
-        const container = containerRef.current;
-        container.innerHTML = "";
+        clearContainer();
 
         for (let pageNumber = 1; pageNumber <= pdfDoc.numPages; pageNumber += 1) {
           const page = await pdfDoc.getPage(pageNumber);
-          if (canceled || !containerRef.current) {
+          if (canceled || !containerElement) {
             return;
           }
 
@@ -454,14 +556,14 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
           canvas.height = viewport.height;
           canvas.width = viewport.width;
 
-          container.appendChild(canvas);
+          containerElement.appendChild(canvas);
           await page.render({ canvasContext: context, viewport }).promise;
         }
       } catch (renderError) {
-        if (!containerRef.current) {
+        if (!containerElement) {
           return;
         }
-        containerRef.current.innerHTML = "";
+        clearContainer();
         const fallback = document.createElement("div");
         fallback.textContent = "Unable to preview PDF content.";
         fallback.style.padding = "12px";
@@ -469,7 +571,7 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
         fallback.style.borderRadius = "12px";
         fallback.style.borderColor = theme.panelBorder;
         fallback.style.color = theme.text;
-        containerRef.current.appendChild(fallback);
+        containerElement.appendChild(fallback);
       }
     };
 
@@ -477,9 +579,7 @@ function PdfContentViewer({ base64Data, isLoading, error, theme, label }) {
 
     return () => {
       canceled = true;
-      if (containerRef.current) {
-        containerRef.current.innerHTML = "";
-      }
+      clearContainer();
     };
   }, [base64Data, theme.isDark, theme.panelBorder, theme.text]);
 
@@ -561,14 +661,10 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [selectedSubjects, setSelectedSubjects] = useState({});
   const [subjectActionSelections, setSubjectActionSelections] = useState({});
+  const [subjectPresentationPreferences, setSubjectPresentationPreferences] = useState({});
   const [pdfCache, setPdfCache] = useState({});
   const [pdfLoading, setPdfLoading] = useState({});
   const [pdfError, setPdfError] = useState({});
-  const [presentationStatus, setPresentationStatus] = useState({});
-  const [presentationError, setPresentationError] = useState({});
-  const [presentationTopics, setPresentationTopics] = useState({});
-  const [presentationPeriodLength, setPresentationPeriodLength] = useState({});
-  const [presentationHistory, setPresentationHistory] = useState({});
   const [handoutStatus, setHandoutStatus] = useState({});
   const [handoutError, setHandoutError] = useState({});
   const [handoutTopics, setHandoutTopics] = useState({});
@@ -607,15 +703,33 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
       ? selectedCountryConfig.message || "This region is coming soon."
       : null;
 
-  const gradeControls = {
-    grade12: { isActive: grade12, setActive: setGrade12 },
-    grade11: { isActive: grade11, setActive: setGrade11 },
-    grade10: { isActive: grade10, setActive: setGrade10 },
-    grade9: { isActive: grade9, setActive: setGrade9 },
-    grade8: { isActive: grade8, setActive: setGrade8 },
-    grade7: { isActive: grade7, setActive: setGrade7 },
-    grade6: { isActive: grade6, setActive: setGrade6 },
-  };
+  const gradeControls = useMemo(
+    () => ({
+      grade12: { isActive: grade12, setActive: setGrade12 },
+      grade11: { isActive: grade11, setActive: setGrade11 },
+      grade10: { isActive: grade10, setActive: setGrade10 },
+      grade9: { isActive: grade9, setActive: setGrade9 },
+      grade8: { isActive: grade8, setActive: setGrade8 },
+      grade7: { isActive: grade7, setActive: setGrade7 },
+      grade6: { isActive: grade6, setActive: setGrade6 },
+    }),
+    [grade12, grade11, grade10, grade9, grade8, grade7, grade6],
+  );
+
+  // Get grade configuration based on selected board
+  const activeGradeConfigs = useMemo(() => {
+    if (boardSelections.icse) {
+      return BOARD_GRADE_CONFIGS.icse;
+    } else if (boardSelections.ib) {
+      return BOARD_GRADE_CONFIGS.ib;
+    } else if (boardSelections.state) {
+      return BOARD_GRADE_CONFIGS.state;
+    } else if (boardSelections.cbse) {
+      return BOARD_GRADE_CONFIGS.cbse;
+    }
+    // Default to CBSE
+    return BOARD_GRADE_CONFIGS.cbse;
+  }, [boardSelections]);
 
   useEffect(() => {
     if (selectedCountry !== "india") {
@@ -683,8 +797,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         control.setActive(true);
       }
     });
-  }, [router.isReady, router.query.grade]);
-
+  }, [gradeControls, router.isReady, router.query.grade]);
   useEffect(() => {
     if (typeof window === "undefined") {
       setAuthLoading(false);
@@ -775,6 +888,87 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
 
   const getSubjectKey = (gradeId, subject) => `${gradeId}::${subject}`;
   const getActionKey = (gradeId, subject, action) => `${gradeId}::${subject}::${action}`;
+  const getSubjectPresentationSettings = (subjectKey) =>
+    subjectPresentationPreferences[subjectKey] ?? getInitialSubjectPresentationState();
+
+  const updateSubjectPresentationSettings = (subjectKey, updater) => {
+    if (!subjectKey) {
+      return;
+    }
+
+    setSubjectPresentationPreferences((previous) => {
+      const existing = previous[subjectKey] ?? getInitialSubjectPresentationState();
+      const nextSettings =
+        typeof updater === "function" ? updater(existing) : { ...existing, ...updater };
+      return {
+        ...previous,
+        [subjectKey]: nextSettings,
+      };
+    });
+  };
+
+  const clearSubjectPresentationSettings = (subjectKey) => {
+    if (!subjectKey) {
+      return;
+    }
+
+    setSubjectPresentationPreferences((previous) => {
+      if (!previous[subjectKey]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[subjectKey];
+      return next;
+    });
+  };
+
+  const handleSubjectPresentationToggle = (gradeId, subject, isEnabled) => {
+    const subjectKey = getSubjectKey(gradeId, subject);
+    if (!isEnabled) {
+      clearSubjectPresentationSettings(subjectKey);
+      return;
+    }
+
+    updateSubjectPresentationSettings(subjectKey, (existing) => ({
+      ...existing,
+      enabled: true,
+    }));
+  };
+
+  const handleSubjectPresentationOptionToggle = (gradeId, subject, optionKey, isChecked) => {
+    const subjectKey = getSubjectKey(gradeId, subject);
+    updateSubjectPresentationSettings(subjectKey, (existing) => {
+      const nextSettings = {
+        ...existing,
+        enabled: true,
+        [optionKey]: isChecked,
+      };
+      if (optionKey === "highResImages" && !isChecked) {
+        nextSettings.status = "idle";
+        nextSettings.error = null;
+      }
+      return nextSettings;
+    });
+  };
+
+  const handlePresentationFieldChange = (gradeId, subject, field, value) => {
+    const subjectKey = getSubjectKey(gradeId, subject);
+    updateSubjectPresentationSettings(subjectKey, (existing) => {
+      const nextSettings = {
+        ...existing,
+        [field]: value,
+      };
+      if ((field === "topic" || field === "gptiTopic" || field === "cgTopic") && existing.status === "missing-topic" && value.trim()) {
+        nextSettings.status = "idle";
+        nextSettings.error = null;
+      }
+      if (field === "slideCount" && existing.status === "invalid-count") {
+        nextSettings.status = "idle";
+        nextSettings.error = null;
+      }
+      return nextSettings;
+    });
+  };
 
   const handleGenerationConsumption = () => {
     if (isGuestUser) {
@@ -965,6 +1159,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
       });
 
       if (isSelected) {
+        clearSubjectPresentationSettings(subjectKey);
         const actionPrefix = `${gradeId}::${subject}::`;
 
         setPdfCache((prevCache) => {
@@ -995,30 +1190,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
             }
           });
           return updatedError;
-        });
-
-        setPresentationStatus((prevStatus) => {
-          const updated = { ...prevStatus };
-          delete updated[subjectKey];
-          return updated;
-        });
-
-        setPresentationError((prevPresentationError) => {
-          const updated = { ...prevPresentationError };
-          delete updated[subjectKey];
-          return updated;
-        });
-
-        setPresentationTopics((prevTopics) => {
-          const updated = { ...prevTopics };
-          delete updated[subjectKey];
-          return updated;
-        });
-
-        setPresentationHistory((prevHistory) => {
-          const updated = { ...prevHistory };
-          delete updated[subjectKey];
-          return updated;
         });
 
         setHandoutStatus((prevHandoutStatus) => {
@@ -1146,86 +1317,279 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     });
   };
 
-  const triggerPresentationDownload = async (gradeId, subject, topic) => {
+  const triggerSvgPresentation = async (gradeId, subject) => {
+    console.log('triggerSvgPresentation called', { gradeId, subject });
+    
     if (isGuestUser) {
       router.push("/login");
       return;
     }
-    const subjectKey = getSubjectKey(gradeId, subject);
-    const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
-    const periodMinutes = presentationPeriodLength[subjectKey] || 40;
 
-    if (!topic) {
-      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "missing-topic" }));
+    const subjectKey = getSubjectKey(gradeId, subject);
+    const settings = getSubjectPresentationSettings(subjectKey);
+    console.log('Presentation settings:', settings);
+
+    // Check which mode is enabled
+    if (!settings.useCraiyon && !settings.useGPTI && !settings.useCG && !settings.svgAssets) {
+      console.log('No mode enabled, returning early');
+      return;
+    }
+
+    // Select the appropriate topic based on the mode
+    const trimmedTopic = settings.useGPTI 
+      ? (settings.gptiTopic || "").trim()
+      : settings.useCG
+      ? (settings.cgTopic || "").trim()
+      : (settings.topic || "").trim();
+    
+    console.log('Trimmed topic:', trimmedTopic);
+    
+    if (!trimmedTopic) {
+      console.log('Topic is empty, setting missing-topic status');
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "missing-topic",
+        error: null,
+      }));
+      return;
+    }
+
+    const parsedCount = Number.parseInt(settings.slideCount, 10);
+    const normalizedCount = Number.isFinite(parsedCount) ? parsedCount : 0;
+
+    if (normalizedCount < 1 || normalizedCount > MAX_PRESENTATION_SLIDES) {
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "invalid-count",
+        error: null,
+      }));
       return;
     }
 
     if (isGuestUser && guestQuota.remaining <= 0) {
-      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "quota-exceeded" }));
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "quota-exceeded",
+        error: null,
+      }));
       return;
     }
 
     if (!isGuestUser && isOutOfCredits) {
-      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "no-credits" }));
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "no-credits",
+        error: null,
+      }));
       return;
     }
 
-    setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "loading" }));
-    setPresentationError((prev) => ({ ...prev, [subjectKey]: null }));
+    updateSubjectPresentationSettings(subjectKey, (current) => ({
+      ...current,
+      status: "loading",
+      error: null,
+    }));
 
     try {
-      const response = await fetch(`/api/presentation?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}&periodMinutes=${encodeURIComponent(String(periodMinutes))}`, {
-        cache: "no-store",
-        method: "GET",
+      const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
+      const authHeaders = await getAuthHeaders(isGuestUser);
+      const response = await fetch("/api/presentation-svg", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          subject,
+          topic: trimmedTopic,
+          grade: String(gradeParam),
+          slideCount: normalizedCount,
+          useCraiyon: settings.useCraiyon || false,
+          useGPTI: settings.useGPTI || false,
+          useCG: settings.useCG || false,
+        }),
       });
 
-      if (!response.ok) {
-        const errorBody = await response.json().catch(() => ({}));
-        const providerHint = errorBody?.providerHint || resolveProviderHint(errorBody?.provider);
-        throw new Error(
-          errorBody?.message || providerHint || "Failed to generate presentation"
-        );
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (parseError) {
+        throw new Error("Invalid response from server");
       }
 
-      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.message || "Failed to generate SVG presentation");
+      }
+
+      if (!payload.base64 || !payload.filename) {
+        throw new Error("Missing presentation data");
+      }
+
+      await handleGenerationConsumption("presentation");
+
+      const binaryString = atob(payload.base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i += 1) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const blob = new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = payload.filename;
+      a.click();
+      URL.revokeObjectURL(url);
+
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "success",
+        error: null,
+      }));
+
+      setTimeout(() => {
+        updateSubjectPresentationSettings(subjectKey, (current) => {
+          if (current?.status === "success") {
+            return { ...current, status: "idle", error: null };
+          }
+          return current;
+        });
+      }, 3000);
+    } catch (error) {
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "error",
+        error: error.message || "Unknown error",
+      }));
+    }
+  };
+
+  const triggerHighResPresentation = async (gradeId, subject) => {
+    if (isGuestUser) {
+      router.push("/login");
+      return;
+    }
+
+    const subjectKey = getSubjectKey(gradeId, subject);
+    const settings = getSubjectPresentationSettings(subjectKey);
+
+    if (!settings.highResImages) {
+      return;
+    }
+
+    const trimmedTopic = (settings.topic || "").trim();
+    if (!trimmedTopic) {
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "missing-topic",
+        error: null,
+      }));
+      return;
+    }
+
+    const parsedCount = Number.parseInt(settings.slideCount, 10);
+    const normalizedCount = Number.isFinite(parsedCount) ? parsedCount : 0;
+
+    if (normalizedCount < 1 || normalizedCount > MAX_PRESENTATION_SLIDES) {
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "invalid-count",
+        error: null,
+      }));
+      return;
+    }
+
+    if (isGuestUser && guestQuota.remaining <= 0) {
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "quota-exceeded",
+        error: null,
+      }));
+      return;
+    }
+
+    if (!isGuestUser && isOutOfCredits) {
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "no-credits",
+        error: null,
+      }));
+      return;
+    }
+
+    updateSubjectPresentationSettings(subjectKey, (current) => ({
+      ...current,
+      status: "loading",
+      error: null,
+    }));
+
+    try {
+      const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
+      const authHeaders = await getAuthHeaders(isGuestUser);
+      const response = await fetch("/api/presentation-highres", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          subject,
+          topic: trimmedTopic,
+          grade: String(gradeParam),
+          slideCount: normalizedCount,
+          useCraiyon: settings.useCraiyon || false,
+        }),
+      });
+
+      let payload = null;
+      try {
+        payload = await response.json();
+      } catch (parseError) {
+        payload = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(payload?.message || "Failed to generate presentation");
+      }
+
       if (!payload?.base64) {
         throw new Error("Missing presentation content");
       }
 
       const byteCharacters = atob(payload.base64);
       const byteNumbers = new Array(byteCharacters.length);
-      for (let i = 0; i < byteCharacters.length; i += 1) {
-        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      for (let index = 0; index < byteCharacters.length; index += 1) {
+        byteNumbers[index] = byteCharacters.charCodeAt(index);
       }
 
       const byteArray = new Uint8Array(byteNumbers);
-      const blob = new Blob([byteArray], {
-        type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      });
-
+      const blob = new Blob([byteArray], { type: "application/vnd.openxmlformats-officedocument.presentationml.presentation" });
       const downloadUrl = URL.createObjectURL(blob);
+      const fallbackName = `${subject
+        .replace(/\s+/g, "_")
+        .toLowerCase()}_${trimmedTopic.replace(/[^a-z0-9]+/gi, "_").toLowerCase() || "presentation"}.pptx`;
       const link = document.createElement("a");
       link.href = downloadUrl;
-      link.download = `${subject.replace(/\s+/g, "_")}_${topic.replace(/[^a-z0-9]+/gi, "_").toLowerCase() || "presentation"}.pptx`;
+      link.download = payload.filename || fallbackName;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(downloadUrl);
 
-      setPresentationTopics((prev) => ({ ...prev, [subjectKey]: "" }));
-      setPresentationHistory((prev) => ({
-        ...prev,
-        [subjectKey]: [topic, ...(prev?.[subjectKey] ?? []).filter((item) => item !== topic)].slice(0, 5),
-      }));
-
       handleGenerationConsumption();
 
-      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "success" }));
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "success",
+        error: null,
+        topic: "",
+      }));
     } catch (error) {
-      setPresentationStatus((prev) => ({ ...prev, [subjectKey]: "error" }));
-      setPresentationError((prev) => ({
-        ...prev,
-        [subjectKey]: error.message || "Unable to generate presentation",
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "error",
+        error: error.message || "Unable to generate presentation",
       }));
     }
   };
@@ -1257,7 +1621,13 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     setHandoutError((prev) => ({ ...prev, [subjectKey]: null }));
 
     try {
-      const response = await fetch(`/api/pdf?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}`, {
+      const params = new URLSearchParams({
+        subject,
+        topic,
+        grade: String(gradeParam),
+      });
+
+      const response = await fetch(`/api/pdf?${params.toString()}`, {
         cache: "no-store",
         method: "GET",
       });
@@ -1334,9 +1704,11 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     setLessonPlanError((prev) => ({ ...prev, [subjectKey]: null }));
 
     try {
+      const authHeaders = await getAuthHeaders(isGuestUser);
       const response = await fetch(`/api/lesson-plan?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}`, {
         cache: "no-store",
         method: "GET",
+        headers: authHeaders,
       });
 
       if (!response.ok) {
@@ -1411,9 +1783,11 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     setWebPageError((prev) => ({ ...prev, [subjectKey]: null }));
 
     try {
+      const authHeaders = await getAuthHeaders(isGuestUser);
       const response = await fetch(`/api/web-page?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}`, {
         cache: "no-store",
         method: "GET",
+        headers: authHeaders,
       });
 
       if (!response.ok) {
@@ -1487,9 +1861,11 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     setConceptMapError((prev) => ({ ...prev, [subjectKey]: null }));
 
     try {
+      const authHeaders = await getAuthHeaders(isGuestUser);
       const response = await fetch(`/api/concept-map?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}`, {
         cache: "no-store",
         method: "GET",
+        headers: authHeaders,
       });
 
       if (!response.ok) {
@@ -1565,9 +1941,11 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     setMcqError((prev) => ({ ...prev, [subjectKey]: null }));
 
     try {
+      const authHeaders = await getAuthHeaders(isGuestUser);
       const response = await fetch(`/api/mcqs?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}&grade=${encodeURIComponent(String(gradeParam))}`, {
         cache: "no-store",
         method: "GET",
+        headers: authHeaders,
       });
 
       if (!response.ok) {
@@ -1723,10 +2101,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
       if (hasPdf) {
         fetchPdfContent(gradeId, subject, action);
       }
-      if (action === "Generate presentations") {
-        const topic = presentationTopics[subjectKey]?.trim();
-        triggerPresentationDownload(gradeId, subject, topic);
-      }
       if (action === "Generate PDF") {
         const topic = handoutTopics[subjectKey]?.trim();
         triggerHandoutDownload(gradeId, subject, topic);
@@ -1766,20 +2140,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         });
       }
 
-      if (action === "Generate presentations") {
-        setPresentationStatus((prev) => {
-          const { [subjectKey]: _removed, ...rest } = prev;
-          return rest;
-        });
-        setPresentationError((prev) => {
-          const { [subjectKey]: _removed, ...rest } = prev;
-          return rest;
-        });
-        setPresentationTopics((prev) => {
-          const { [subjectKey]: _removed, ...rest } = prev;
-          return rest;
-        });
-      }
       if (action === "Generate PDF") {
         setHandoutStatus((prev) => {
           const { [subjectKey]: _removed, ...rest } = prev;
@@ -1901,6 +2261,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const shouldShowGrades =
     !isBoardSelectionPage ||
     boardSelections.cbse ||
+    boardSelections.icse ||
+    boardSelections.ib ||
     (boardSelections.state && hasStateSelection);
 
   return (
@@ -2023,7 +2385,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
           lineHeight: 1.6,
         }}
       >
-        Teachwise AI is a Gen AI Powered App for helping the teachers across the globe to generate presentations, MCQs, Lesson Plans, Web Pages, PDFs and much more.
+        Teachwise AI is a Gen AI Powered App for helping teachers across the globe generate MCQs, Lesson Plans, Web Pages, PDFs, and more.
       </p>
 
       {/* Board Heading */}
@@ -2188,26 +2550,83 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         </>
       )}
       {shouldShowGrades && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "8px",
-            fontSize: "1.2rem",
-            background: theme.panel,
-            border: "1px solid",
-            borderColor: theme.panelBorder,
-            padding: "16px 24px",
-            borderRadius: "14px",
-            width: "100%",
-            maxWidth: "720px",
-            textAlign: "left",
-            boxShadow: isDarkMode
-              ? "0 20px 35px rgba(15, 23, 42, 0.5)"
-              : "0 18px 30px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          {GRADE_CONFIGS.map((gradeConfig) => {
+        <>
+          {/* Official Website Checkbox */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              fontSize: "1rem",
+              background: theme.panel,
+              border: "1px solid",
+              borderColor: theme.panelBorder,
+              padding: "12px 20px",
+              borderRadius: "14px",
+              width: "100%",
+              maxWidth: "720px",
+              marginBottom: "12px",
+              cursor: "pointer",
+              transition: "all 0.2s ease",
+            }}
+            onClick={() => {
+              const selectedBoard = boardSelections.icse ? 'icse' : 
+                                   boardSelections.ib ? 'ib' : 
+                                   boardSelections.cbse ? 'cbse' : 
+                                   boardSelections.state ? 'state' : null;
+              
+              if (selectedBoard === 'state') {
+                // Find the selected state board
+                const selectedState = STATE_BOARD_OPTIONS.find(
+                  state => stateBoardSelections[state]
+                );
+                
+                if (selectedState && STATE_BOARD_WEBSITES[selectedState]) {
+                  window.open(STATE_BOARD_WEBSITES[selectedState], '_blank', 'noopener,noreferrer');
+                } else if (selectedState) {
+                  alert(`Website for ${selectedState} is not available yet.`);
+                } else {
+                  alert('Please select a specific state board to view its official website.');
+                }
+              } else if (selectedBoard && BOARD_OFFICIAL_WEBSITES[selectedBoard]) {
+                window.open(BOARD_OFFICIAL_WEBSITES[selectedBoard], '_blank', 'noopener,noreferrer');
+              }
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={false}
+              readOnly
+              style={{ 
+                accentColor: theme.accent,
+                cursor: "pointer",
+                pointerEvents: "none"
+              }}
+            />
+            <span style={{ color: theme.text, cursor: "pointer" }}>
+              Visit Official Website
+            </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              gap: "8px",
+              fontSize: "1.2rem",
+              background: theme.panel,
+              border: "1px solid",
+              borderColor: theme.panelBorder,
+              padding: "16px 24px",
+              borderRadius: "14px",
+              width: "100%",
+              maxWidth: "720px",
+              textAlign: "left",
+              boxShadow: isDarkMode
+                ? "0 20px 35px rgba(15, 23, 42, 0.5)"
+                : "0 18px 30px rgba(15, 23, 42, 0.08)",
+            }}
+          >
+            {activeGradeConfigs.map((gradeConfig) => {
             const control = gradeControls[gradeConfig.id];
             if (!control) {
               return null;
@@ -2247,6 +2666,9 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                       const subjectKey = getSubjectKey(gradeConfig.id, subject);
                       const actionState =
                         subjectActionSelections?.[gradeConfig.id]?.[subject] ?? {};
+                      const presentationSettings = getSubjectPresentationSettings(subjectKey);
+                      const presentationStatus = presentationSettings.status;
+                      const presentationErrorMessage = presentationSettings.error;
 
                       return (
                         <div
@@ -2297,6 +2719,814 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                               paddingRight: "8px",
                             }}
                           >
+                            <div
+                              style={{
+                                display: "flex",
+                                flexDirection: "column",
+                                gap: "4px",
+                                paddingBottom: "6px",
+                              }}
+                            >
+                              <label
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  fontSize: "0.92rem",
+                                  fontWeight: 600,
+                                  color: theme.text,
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={presentationSettings.enabled}
+                                  onChange={(event) =>
+                                    handleSubjectPresentationToggle(
+                                      gradeConfig.id,
+                                      subject,
+                                      event.target.checked,
+                                    )
+                                  }
+                                  style={{ accentColor: theme.accent }}
+                                />
+                                Generate presentations
+                              </label>
+                              {presentationSettings.enabled ? (
+                                <div
+                                  style={{
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: "4px",
+                                    paddingLeft: "26px",
+                                  }}
+                                >
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      fontSize: "0.85rem",
+                                      color: theme.isDark ? "#94a3b8" : "#475569",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={presentationSettings.useCraiyon}
+                                      onChange={(event) =>
+                                        handleSubjectPresentationOptionToggle(
+                                          gradeConfig.id,
+                                          subject,
+                                          "useCraiyon",
+                                          event.target.checked,
+                                        )
+                                      }
+                                      style={{ accentColor: theme.accent }}
+                                    />
+                                    Generate Presentations using CR
+                                  </label>
+                                  {presentationSettings.useCraiyon ? (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "8px",
+                                        paddingLeft: "24px",
+                                      }}
+                                    >
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <span>Presentation topic</span>
+                                        <input
+                                          type="text"
+                                          value={presentationSettings.topic}
+                                          onChange={(event) =>
+                                            handlePresentationFieldChange(
+                                              gradeConfig.id,
+                                              subject,
+                                              "topic",
+                                              event.target.value,
+                                            )
+                                          }
+                                          placeholder="Ex: Photosynthesis in plants"
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          triggerSvgPresentation(gradeConfig.id, subject)
+                                        }
+                                        style={{
+                                          padding: "8px 16px",
+                                          borderRadius: "10px",
+                                          border: "none",
+                                          background: theme.accent,
+                                          color: theme.isDark ? "#0b1120" : "#ffffff",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                        }}
+                                        disabled={
+                                          presentationStatus === "loading" || shouldDisableGeneration
+                                        }
+                                      >
+                                        {presentationStatus === "loading"
+                                          ? "Generating..."
+                                          : "Generate high-res deck"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      fontSize: "0.85rem",
+                                      color: theme.isDark ? "#94a3b8" : "#475569",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={presentationSettings.useGPTI}
+                                      onChange={(event) =>
+                                        handleSubjectPresentationOptionToggle(
+                                          gradeConfig.id,
+                                          subject,
+                                          "useGPTI",
+                                          event.target.checked,
+                                        )
+                                      }
+                                      style={{ accentColor: theme.accent }}
+                                    />
+                                    Create Presentations with GPTI
+                                  </label>
+                                  {presentationSettings.useGPTI ? (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "8px",
+                                        paddingLeft: "24px",
+                                      }}
+                                    >
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <span>Presentation topic</span>
+                                        <input
+                                          type="text"
+                                          value={presentationSettings.gptiTopic}
+                                          onChange={(event) =>
+                                            handlePresentationFieldChange(
+                                              gradeConfig.id,
+                                              subject,
+                                              "gptiTopic",
+                                              event.target.value,
+                                            )
+                                          }
+                                          placeholder="Ex: Cell division and mitosis"
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
+                                      </label>
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <span>Number of slides (max {MAX_PRESENTATION_SLIDES})</span>
+                                        <input
+                                          type="number"
+                                          min={1}
+                                          max={MAX_PRESENTATION_SLIDES}
+                                          value={presentationSettings.slideCount}
+                                          onChange={(event) =>
+                                            handlePresentationFieldChange(
+                                              gradeConfig.id,
+                                              subject,
+                                              "slideCount",
+                                              event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                            )
+                                          }
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          triggerSvgPresentation(gradeConfig.id, subject)
+                                        }
+                                        style={{
+                                          padding: "8px 16px",
+                                          borderRadius: "10px",
+                                          border: "none",
+                                          background: theme.accent,
+                                          color: theme.isDark ? "#0b1120" : "#ffffff",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                        }}
+                                        disabled={
+                                          presentationStatus === "loading" || shouldDisableGeneration
+                                        }
+                                      >
+                                        {presentationStatus === "loading"
+                                          ? "Generating..."
+                                          : "Generate high res deck"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                  {false && <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                                    <label
+                                      style={{
+                                        display: "flex",
+                                        alignItems: "center",
+                                        gap: "8px",
+                                        fontSize: "0.85rem",
+                                        color: theme.isDark ? "#94a3b8" : "#475569",
+                                      }}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={presentationSettings.highResImages}
+                                        onChange={(event) =>
+                                          handleSubjectPresentationOptionToggle(
+                                            gradeConfig.id,
+                                            subject,
+                                            "highResImages",
+                                            event.target.checked,
+                                          )
+                                        }
+                                        style={{ accentColor: theme.accent }}
+                                      />
+                                      Generate presentations with high resolution images
+                                    </label>
+                                    {presentationSettings.highResImages ? (
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "8px",
+                                          paddingLeft: "24px",
+                                        }}
+                                      >
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            flexWrap: "wrap",
+                                            gap: "10px",
+                                          }}
+                                        >
+                                          <label
+                                            style={{
+                                              display: "flex",
+                                              flexDirection: "column",
+                                              gap: "4px",
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#cbd5f5" : "#334155",
+                                              minWidth: "180px",
+                                            }}
+                                          >
+                                            <span>
+                                              Number of slides (max {MAX_PRESENTATION_SLIDES})
+                                            </span>
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              max={MAX_PRESENTATION_SLIDES}
+                                              value={presentationSettings.slideCount}
+                                              onChange={(event) =>
+                                                handlePresentationFieldChange(
+                                                  gradeConfig.id,
+                                                  subject,
+                                                  "slideCount",
+                                                  event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                                )
+                                              }
+                                              style={{
+                                                padding: "8px 10px",
+                                                borderRadius: "8px",
+                                                border: "1px solid",
+                                                borderColor: theme.panelBorder,
+                                                background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                                color: theme.text,
+                                              }}
+                                            />
+                                          </label>
+                                          <label
+                                            style={{
+                                              display: "flex",
+                                              flexDirection: "column",
+                                              gap: "4px",
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#cbd5f5" : "#334155",
+                                              flex: "1",
+                                              minWidth: "220px",
+                                            }}
+                                          >
+                                            <span>Presentation topic</span>
+                                            <input
+                                              type="text"
+                                              value={presentationSettings.topic}
+                                              onChange={(event) =>
+                                                handlePresentationFieldChange(
+                                                  gradeConfig.id,
+                                                  subject,
+                                                  "topic",
+                                                  event.target.value,
+                                                )
+                                              }
+                                              placeholder="Ex: Quadratic formula revision"
+                                              style={{
+                                                padding: "8px 10px",
+                                                borderRadius: "8px",
+                                                border: "1px solid",
+                                                borderColor: theme.panelBorder,
+                                                background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                                color: theme.text,
+                                              }}
+                                            />
+                                          </label>
+                                        </div>
+                                        <div
+                                          style={{
+                                            display: "flex",
+                                            gap: "10px",
+                                            alignItems: "center",
+                                            flexWrap: "wrap",
+                                          }}
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              triggerHighResPresentation(gradeConfig.id, subject)
+                                            }
+                                            style={{
+                                              padding: "8px 16px",
+                                              borderRadius: "10px",
+                                              border: "none",
+                                              background: theme.accent,
+                                              color: theme.isDark ? "#0b1120" : "#ffffff",
+                                              fontWeight: 600,
+                                              cursor: "pointer",
+                                            }}
+                                            disabled={
+                                              presentationStatus === "loading" || shouldDisableGeneration
+                                            }
+                                          >
+                                            {presentationStatus === "loading"
+                                              ? "Generating..."
+                                              : "Generate high-res deck"}
+                                          </button>
+                                        </div>
+                                        {presentationStatus === "missing-topic" && (
+                                          <span
+                                            style={{ fontSize: "0.82rem", color: "#f97316" }}
+                                          >
+                                            Enter a topic to continue.
+                                          </span>
+                                        )}
+                                        {presentationStatus === "invalid-count" && (
+                                          <span
+                                            style={{ fontSize: "0.82rem", color: "#f97316" }}
+                                          >
+                                            Enter a slide count between 1 and {MAX_PRESENTATION_SLIDES}.
+                                          </span>
+                                        )}
+                                        {presentationStatus === "quota-exceeded" && (
+                                          <span
+                                            style={{ fontSize: "0.82rem", color: "#f87171" }}
+                                          >
+                                            {guestLimitMessage}
+                                          </span>
+                                        )}
+                                        {presentationStatus === "no-credits" && (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        )}
+                                        {presentationStatus === "error" && (
+                                          <span
+                                            style={{ fontSize: "0.82rem", color: "#f87171" }}
+                                          >
+                                            Unable to generate presentation:
+                                            {" "}
+                                            {presentationErrorMessage ?? "Unknown error"}
+                                          </span>
+                                        )}
+                                        {presentationStatus === "success" && (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#38bdf8" : "#2563eb",
+                                            }}
+                                          >
+                                            Presentation downloaded.
+                                          </span>
+                                        )}
+                                        {(!presentationStatus || presentationStatus === "idle") && (
+                                          guestLimitReached ? (
+                                            <span
+                                              style={{ fontSize: "0.82rem", color: "#f87171" }}
+                                            >
+                                              {guestLimitMessage}
+                                            </span>
+                                          ) : !isGuestUser && isOutOfCredits ? (
+                                            <NoCreditsInlinePrompt
+                                              message={noCreditsMessage}
+                                              onAddCredits={handleAddCreditsRequest}
+                                              theme={theme}
+                                            />
+                                          ) : (
+                                            <span
+                                              style={{
+                                                fontSize: "0.82rem",
+                                                color: theme.isDark ? "#94a3b8" : "#475569",
+                                              }}
+                                            >
+                                              Ready to generate when you are.
+                                            </span>
+                                          )
+                                        )}
+                                      </div>
+                                    ) : null}
+                                  </div>}
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      fontSize: "0.85rem",
+                                      color: theme.isDark ? "#94a3b8" : "#475569",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={presentationSettings.svgAssets}
+                                      onChange={(event) =>
+                                        handleSubjectPresentationOptionToggle(
+                                          gradeConfig.id,
+                                          subject,
+                                          "svgAssets",
+                                          event.target.checked,
+                                        )
+                                      }
+                                      style={{ accentColor: theme.accent }}
+                                    />
+                                    Generate presentations with SVG
+                                  </label>
+                                  {presentationSettings.svgAssets ? (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "8px",
+                                        paddingLeft: "24px",
+                                      }}
+                                    >
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <span>Presentation topic</span>
+                                        <input
+                                          type="text"
+                                          value={presentationSettings.topic}
+                                          onChange={(event) =>
+                                            handlePresentationFieldChange(
+                                              gradeConfig.id,
+                                              subject,
+                                              "topic",
+                                              event.target.value,
+                                            )
+                                          }
+                                          placeholder="Ex: Photosynthesis in plants"
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
+                                      </label>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          flexWrap: "wrap",
+                                          gap: "10px",
+                                        }}
+                                      >
+                                        <label
+                                          style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "4px",
+                                            fontSize: "0.82rem",
+                                            color: theme.isDark ? "#cbd5f5" : "#334155",
+                                            minWidth: "180px",
+                                          }}
+                                        >
+                                          <span>
+                                            Number of slides (max {MAX_PRESENTATION_SLIDES})
+                                          </span>
+                                          <input
+                                            type="number"
+                                            min={1}
+                                            max={MAX_PRESENTATION_SLIDES}
+                                            value={presentationSettings.slideCount}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "slideCount",
+                                                event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                              )
+                                            }
+                                            style={{
+                                              padding: "8px 10px",
+                                              borderRadius: "8px",
+                                              border: "1px solid",
+                                              borderColor: theme.panelBorder,
+                                              background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                              color: theme.text,
+                                            }}
+                                          />
+                                        </label>
+                                        <label
+                                          style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "4px",
+                                            fontSize: "0.82rem",
+                                            color: theme.isDark ? "#cbd5f5" : "#334155",
+                                            flex: "1",
+                                            minWidth: "220px",
+                                          }}
+                                        >
+                                          <span>Presentation topic</span>
+                                          <input
+                                            type="text"
+                                            value={presentationSettings.topic}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "topic",
+                                                event.target.value,
+                                              )
+                                            }
+                                            placeholder="Ex: Quadratic formula revision"
+                                            style={{
+                                              padding: "8px 10px",
+                                              borderRadius: "8px",
+                                              border: "1px solid",
+                                              borderColor: theme.panelBorder,
+                                              background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                              color: theme.text,
+                                            }}
+                                          />
+                                        </label>
+                                      </div>
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          gap: "10px",
+                                          alignItems: "center",
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            triggerSvgPresentation(gradeConfig.id, subject)
+                                          }
+                                          style={{
+                                            padding: "8px 16px",
+                                            borderRadius: "10px",
+                                            border: "none",
+                                            background: theme.accent,
+                                            color: theme.isDark ? "#0b1120" : "#ffffff",
+                                            fontWeight: 600,
+                                            cursor: "pointer",
+                                          }}
+                                          disabled={
+                                            presentationStatus === "loading" || shouldDisableGeneration
+                                          }
+                                        >
+                                          {presentationStatus === "loading"
+                                            ? "Generating..."
+                                            : "Generate SVG deck"}
+                                        </button>
+                                      </div>
+                                      {presentationStatus === "missing-topic" && (
+                                        <span
+                                          style={{ fontSize: "0.82rem", color: "#f97316" }}
+                                        >
+                                          Enter a topic to continue.
+                                        </span>
+                                      )}
+                                      {presentationStatus === "invalid-count" && (
+                                        <span
+                                          style={{ fontSize: "0.82rem", color: "#f97316" }}
+                                        >
+                                          Enter a slide count between 1 and {MAX_PRESENTATION_SLIDES}.
+                                        </span>
+                                      )}
+                                      {presentationStatus === "quota-exceeded" && (
+                                        <span
+                                          style={{ fontSize: "0.82rem", color: "#f87171" }}
+                                        >
+                                          {guestLimitMessage}
+                                        </span>
+                                      )}
+                                      {presentationStatus === "no-credits" && (
+                                        <NoCreditsInlinePrompt
+                                          message={noCreditsMessage}
+                                          onAddCredits={handleAddCreditsRequest}
+                                          theme={theme}
+                                        />
+                                      )}
+                                      {presentationStatus === "error" && (
+                                        <span
+                                          style={{ fontSize: "0.82rem", color: "#f87171" }}
+                                        >
+                                          Unable to generate presentation:
+                                          {" "}
+                                          {presentationErrorMessage ?? "Unknown error"}
+                                        </span>
+                                      )}
+                                      {presentationStatus === "success" && (
+                                        <span
+                                          style={{
+                                            fontSize: "0.82rem",
+                                            color: theme.isDark ? "#38bdf8" : "#2563eb",
+                                          }}
+                                        >
+                                          Presentation downloaded.
+                                        </span>
+                                      )}
+                                      {(!presentationStatus || presentationStatus === "idle") && (
+                                        guestLimitReached ? (
+                                          <span
+                                            style={{ fontSize: "0.82rem", color: "#f87171" }}
+                                          >
+                                            {guestLimitMessage}
+                                          </span>
+                                        ) : !isGuestUser && isOutOfCredits ? (
+                                          <NoCreditsInlinePrompt
+                                            message={noCreditsMessage}
+                                            onAddCredits={handleAddCreditsRequest}
+                                            theme={theme}
+                                          />
+                                        ) : (
+                                          <span
+                                            style={{
+                                              fontSize: "0.82rem",
+                                              color: theme.isDark ? "#94a3b8" : "#475569",
+                                            }}
+                                          >
+                                            Ready to generate when you are.
+                                          </span>
+                                        )
+                                      )}
+                                    </div>
+                                  ) : null}
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      fontSize: "0.85rem",
+                                      color: theme.isDark ? "#94a3b8" : "#475569",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={presentationSettings.useCG}
+                                      onChange={(event) =>
+                                        handleSubjectPresentationOptionToggle(
+                                          gradeConfig.id,
+                                          subject,
+                                          "useCG",
+                                          event.target.checked,
+                                        )
+                                      }
+                                      style={{ accentColor: theme.accent }}
+                                    />
+                                    Generate presentations with CG
+                                  </label>
+                                  {presentationSettings.useCG ? (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: "8px",
+                                        paddingLeft: "24px",
+                                      }}
+                                    >
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <span>Presentation topic</span>
+                                        <input
+                                          type="text"
+                                          value={presentationSettings.cgTopic}
+                                          onChange={(event) =>
+                                            handlePresentationFieldChange(
+                                              gradeConfig.id,
+                                              subject,
+                                              "cgTopic",
+                                              event.target.value,
+                                            )
+                                          }
+                                          placeholder="Ex: World War II major events"
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
+                                      </label>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          triggerSvgPresentation(gradeConfig.id, subject)
+                                        }
+                                        style={{
+                                          padding: "8px 16px",
+                                          borderRadius: "10px",
+                                          border: "none",
+                                          background: theme.accent,
+                                          color: theme.isDark ? "#0b1120" : "#ffffff",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                        }}
+                                        disabled={
+                                          presentationStatus === "loading" || shouldDisableGeneration
+                                        }
+                                      >
+                                        {presentationStatus === "loading"
+                                          ? "Generating..."
+                                          : "Generate CG deck"}
+                                      </button>
+                                    </div>
+                                  ) : null}
+                                </div>
+                              ) : null}
+                            </div>
                             {SUBJECT_ACTIONS.map((action) => {
                               const isActionSelected = Boolean(actionState[action]);
                               const cacheKey = getActionKey(gradeConfig.id, subject, action);
@@ -2306,10 +3536,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                               const isSyllabus = action === "Syllabus";
                               const isReadingMaterials = action === "Reading Materials";
                               const showInlinePdf = hasPdf && !isSyllabus && !isReadingMaterials;
-                              const presentationState = presentationStatus[subjectKey];
-                              const presentationErrorMessage = presentationError[subjectKey];
-                              const topicValue = presentationTopics[subjectKey] ?? "";
-                              const recentTopics = presentationHistory[subjectKey] ?? [];
                               const handoutState = handoutStatus[subjectKey];
                               const handoutErrorMessage = handoutError[subjectKey];
                               const handoutValue = handoutTopics[subjectKey] ?? "";
@@ -2368,208 +3594,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                       theme={theme}
                                       label={`${gradeConfig.label} ${subject} ${action}`}
                                     />
-                                  )}
-
-                                  {isActionSelected && action === "Generate presentations" && (
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "6px",
-                                        paddingLeft: "6px",
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          gap: "8px",
-                                          alignItems: "center",
-                                        }}
-                                      >
-                                        <input
-                                          type="text"
-                                          value={topicValue}
-                                          onChange={(event) => {
-                                            const { value } = event.target;
-                                            setPresentationTopics((prev) => ({
-                                              ...prev,
-                                              [subjectKey]: value,
-                                            }));
-                                            if (presentationStatus[subjectKey] === "missing-topic") {
-                                              setPresentationStatus((prev) => ({
-                                                ...prev,
-                                                [subjectKey]: null,
-                                              }));
-                                            }
-                                          }}
-                                          placeholder="Search topic"
-                                          style={{
-                                            flex: "1",
-                                            padding: "8px 12px",
-                                            borderRadius: "10px",
-                                            border: "1px solid",
-                                            borderColor: theme.panelBorder,
-                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
-                                            color: theme.text,
-                                          }}
-                                        />
-                                        <input
-                                          type="number"
-                                          value={presentationPeriodLength[subjectKey] || 40}
-                                          onChange={(event) => {
-                                            const value = parseInt(event.target.value, 10) || 40;
-                                            setPresentationPeriodLength((prev) => ({
-                                              ...prev,
-                                              [subjectKey]: value,
-                                            }));
-                                          }}
-                                          placeholder="Period (min)"
-                                          min="1"
-                                          max="180"
-                                          style={{
-                                            width: "100px",
-                                            padding: "8px 12px",
-                                            borderRadius: "10px",
-                                            border: "1px solid",
-                                            borderColor: theme.panelBorder,
-                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
-                                            color: theme.text,
-                                          }}
-                                        />
-                                        <button
-                                          type="button"
-                                          onClick={() =>
-                                            triggerPresentationDownload(
-                                              gradeConfig.id,
-                                              subject,
-                                              topicValue.trim()
-                                            )
-                                          }
-                                          style={{
-                                            padding: "8px 16px",
-                                            borderRadius: "10px",
-                                            border: "none",
-                                            background: theme.accent,
-                                            color: theme.isDark ? "#0b1120" : "#ffffff",
-                                            fontWeight: 600,
-                                            cursor: "pointer",
-                                          }}
-                                          disabled={presentationState === "loading" || shouldDisableGeneration}
-                                        >
-                                          {presentationState === "loading"
-                                            ? "Generating..."
-                                            : "Generate"}
-                                        </button>
-                                      </div>
-                                      {presentationState === "missing-topic" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f97316",
-                                          }}
-                                        >
-                                          Enter a topic to continue.
-                                        </span>
-                                      )}
-                                      {presentationState === "error" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          Unable to generate presentation: {presentationErrorMessage ?? "Unknown error"}
-                                        </span>
-                                      )}
-                                      {presentationState === "quota-exceeded" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: "#f87171",
-                                          }}
-                                        >
-                                          {guestLimitMessage}
-                                        </span>
-                                      )}
-                                      {presentationState === "no-credits" && (
-                                        <NoCreditsInlinePrompt
-                                          message={noCreditsMessage}
-                                          onAddCredits={handleAddCreditsRequest}
-                                          theme={theme}
-                                        />
-                                      )}
-                                      {presentationState === "success" && (
-                                        <span
-                                          style={{
-                                            fontSize: "0.82rem",
-                                            color: theme.isDark ? "#38bdf8" : "#2563eb",
-                                          }}
-                                        >
-                                          Presentation downloaded.
-                                        </span>
-                                      )}
-                                      {!presentationState && (
-                                        !isGuestUser && isOutOfCredits ? (
-                                          <NoCreditsInlinePrompt
-                                            message={noCreditsMessage}
-                                            onAddCredits={handleAddCreditsRequest}
-                                            theme={theme}
-                                          />
-                                        ) : (
-                                          <span
-                                            style={{
-                                              fontSize: "0.82rem",
-                                              color: theme.isDark ? "#94a3b8" : "#475569",
-                                            }}
-                                          >
-                                            Ready to generate when you are.
-                                          </span>
-                                        )
-                                      )}
-                                      {recentTopics.length > 0 && (
-                                        <div
-                                          style={{
-                                            display: "flex",
-                                            gap: "6px",
-                                            flexWrap: "wrap",
-                                            marginTop: "4px",
-                                          }}
-                                        >
-                                          {recentTopics.map((recentTopic) => (
-                                            <button
-                                              key={recentTopic}
-                                              type="button"
-                                              onClick={() => {
-                                                setPresentationTopics((prev) => ({
-                                                  ...prev,
-                                                  [subjectKey]: recentTopic,
-                                                }));
-                                                triggerPresentationDownload(
-                                                  gradeConfig.id,
-                                                  subject,
-                                                  recentTopic
-                                                );
-                                              }}
-                                              style={{
-                                                padding: "4px 10px",
-                                                borderRadius: "9999px",
-                                                border: "1px solid",
-                                                borderColor: theme.panelBorder,
-                                                background: theme.isDark
-                                                  ? "#1e293b"
-                                                  : "#e2e8f0",
-                                                color: theme.text,
-                                                fontSize: "0.78rem",
-                                                cursor: "pointer",
-                                              }}
-                                              disabled={presentationState === "loading" || shouldDisableGeneration}
-                                            >
-                                              {recentTopic}
-                                            </button>
-                                          ))}
-                                        </div>
-                                      )}
-                                    </div>
                                   )}
 
                                   {isActionSelected && action === "Generate PDF" && (
@@ -3465,7 +4489,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
 
                                   {isActionSelected &&
                                     !hasPdf &&
-                                    action !== "Generate presentations" &&
                                     action !== "Generate PDF" &&
                                     action !== "Generate Lesson Plan" &&
                                     action !== "Generate Web Page" &&
@@ -3495,6 +4518,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
           );
         })}
       </div>
+        </>
       )}
     </div>
   );

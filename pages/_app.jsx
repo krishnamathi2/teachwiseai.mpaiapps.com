@@ -7,6 +7,9 @@ import {
   clearActiveSession,
   markActiveSession,
 } from "../lib/guestUsage";
+import CookieConsent from "../components/CookieConsent";
+import AccessibilityStyles from "../components/AccessibilityStyles";
+import GlobalMetadata from "../components/GlobalMetadata";
 
 const GENERAL_USERS_STORAGE_KEY = "teachwiseai:generalUsers";
 const USER_CREDITS_STORAGE_KEY = "teachwiseai:credits";
@@ -268,7 +271,19 @@ function TeachwiseApp({ Component, pageProps }) {
     };
   }, []);
 
-  return <Component {...pageProps} />;
+  return (
+    <>
+      <GlobalMetadata />
+      <AccessibilityStyles />
+      <a href="#main-content" className="skip-to-main">
+        Skip to main content
+      </a>
+      <div id="main-content">
+        <Component {...pageProps} />
+      </div>
+      <CookieConsent />
+    </>
+  );
 }
 
 export default TeachwiseApp;

@@ -2,6 +2,7 @@ import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { SUBJECT_FILES } from "../../lib/contentMap";
 import { requestModelContent } from "../../lib/modelProvider";
 import { parseGrade, buildGradeLabel } from "../../lib/gradeUtils";
+import { withAuth, checkRateLimit } from "../../lib/authMiddleware";
 
 const DEFAULT_SECTION = {
   name: "Learning Segment",
@@ -12,7 +13,18 @@ const DEFAULT_SECTION = {
   ],
 };
 
-export default async function handler(req, res) {
+async function handler(req, res) {
+  // Rate limiting
+  const rateLimitKey = req.auth.user?.id || req.auth.isGuest ? req.headers["x-forwarded-for"] || "guest" : "anonymous";
+  const rateLimit = checkRateLimit(rateLimitKey, 10, 60000);
+
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: "Too many requests",
+      message: "Rate limit exceeded. Please try again later.",
+      resetTime: rateLimit.resetTime,
+    });
+  }
   const { subject, topic, grade } = req.query;
 
   if (req.method !== "GET") {
@@ -67,6 +79,14 @@ export default async function handler(req, res) {
 
 function buildLessonPlanPrompt(subject, topic, gradeLabel) {
   return `You are an experienced ${gradeLabel} ${subject} teacher. Create a 45-minute lesson plan about ${topic}.
+
+IMPORTANT - NCERT CONTENT EXTRACTION:
+- For CBSE board, base this lesson plan on NCERT ${subject} textbook content for ${gradeLabel}
+- Extract relevant concepts, definitions, examples, and exercises specifically related to "${topic}" from the NCERT curriculum
+- Include specific NCERT examples, formulas, theorems, and practice problems related to this topic
+- Design activities that align with NCERT's teaching methodology
+- Reference specific NCERT chapter content and exercises where applicable
+
 Return ONLY valid JSON (no markdown) following this schema:
 {
   "title": string,
@@ -434,3 +454,5 @@ async function createLessonPlanPdf(plan, { subject, topic, gradeLabel }) {
 
   return pdfDoc.save();
 }
+
+export default withAuth(handler, { allowGuest: true });

@@ -1,0 +1,95 @@
+<svg width="1000" height="600" viewBox="0 0 1000 600"
+     xmlns="http://www.w3.org/2000/svg"
+     font-family="Arial, Helvetica, sans-serif">
+
+  <!-- Title -->
+  <text x="500" y="40" font-size="28" font-weight="bold" text-anchor="middle">
+    Newton’s Laws of Motion
+  </text>
+
+  <!-- ========== FIRST LAW ========== -->
+  <rect x="40" y="90" width="280" height="200" rx="15"
+        fill="#D9EAF7" stroke="#000"/>
+  <text x="180" y="120" font-size="18" font-weight="bold" text-anchor="middle">
+    First Law
+  </text>
+
+  <!-- Box (no movement) -->
+  <rect x="130" y="170" width="100" height="60" rx="8"
+        fill="#F4B183" stroke="#000"/>
+  <text x="180" y="260" font-size="14" text-anchor="middle">
+    No force → No motion
+  </text>
+
+  <!-- ========== SECOND LAW ========== -->
+  <rect x="360" y="90" width="280" height="200" rx="15"
+        fill="#DFF2D8" stroke="#000"/>
+  <text x="500" y="120" font-size="18" font-weight="bold" text-anchor="middle">
+    Second Law (F = m × a)
+  </text>
+
+  <!-- Moving box -->
+  <rect x="410" y="180" width="60" height="40"
+        fill="#AED6F1" stroke="#000">
+    <animateTransform
+      attributeName="transform"
+      type="translate"
+      from="0 0"
+      to="120 0"
+      dur="2s"
+      repeatCount="indefinite"/>
+  </rect>
+
+  <line x1="470" y1="200" x2="560" y2="200"
+        stroke="#000" stroke-width="3" marker-end="url(#arrow)"/>
+  <text x="500" y="260" font-size="14" text-anchor="middle">
+    Force causes acceleration
+  </text>
+
+  <!-- ========== THIRD LAW ========== -->
+  <rect x="680" y="90" width="280" height="200" rx="15"
+        fill="#FADBD8" stroke="#000"/>
+  <text x="820" y="120" font-size="18" font-weight="bold" text-anchor="middle">
+    Third Law
+  </text>
+
+  <!-- Ball -->
+  <circle cx="760" cy="200" r="20" fill="#F9E79F" stroke="#000"/>
+
+  <!-- Wall -->
+  <rect x="860" y="160" width="20" height="80" fill="#999"/>
+
+  <!-- Action Arrow -->
+  <line x1="780" y1="200" x2="850" y2="200"
+        stroke="#000" stroke-width="3" marker-end="url(#arrow)">
+    <animate
+      attributeName="opacity"
+      values="0;1;0"
+      dur="1.5s"
+      repeatCount="indefinite"/>
+  </line>
+
+  <!-- Reaction Arrow -->
+  <line x1="850" y1="230" x2="780" y2="230"
+        stroke="#000" stroke-width="3" marker-end="url(#arrow)">
+    <animate
+      attributeName="opacity"
+      values="0;1;0"
+      dur="1.5s"
+      begin="0.75s"
+      repeatCount="indefinite"/>
+  </line>
+
+  <text x="820" y="270" font-size="14" text-anchor="middle">
+    Equal & opposite forces
+  </text>
+
+  <!-- Arrow Marker -->
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10"
+            refX="5" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#000"/>
+    </marker>
+  </defs>
+
+</svg>

@@ -2,8 +2,20 @@ import { SUBJECT_FILES } from "../../lib/contentMap";
 import { requestModelContent } from "../../lib/modelProvider";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { parseGrade, buildGradeLabel } from "../../lib/gradeUtils";
+import { withAuth, checkRateLimit } from "../../lib/authMiddleware";
 
-export default async function handler(req, res) {
+async function handler(req, res) {
+  // Rate limiting
+  const rateLimitKey = req.auth.user?.id || req.auth.isGuest ? req.headers["x-forwarded-for"] || "guest" : "anonymous";
+  const rateLimit = checkRateLimit(rateLimitKey, 10, 60000);
+
+  if (!rateLimit.allowed) {
+    return res.status(429).json({
+      error: "Too many requests",
+      message: "Rate limit exceeded. Please try again later.",
+      resetTime: rateLimit.resetTime,
+    });
+  }
   const { subject, topic, grade } = req.query;
 
   if (req.method !== "GET") {
@@ -51,8 +63,18 @@ export default async function handler(req, res) {
   }
 }
 
+export default withAuth(handler, { allowGuest: true });
+
 function buildConceptMapPrompt(subject, topic, gradeLabel) {
   return `You are designing a concept map for ${gradeLabel} ${subject} on ${topic}.
+
+IMPORTANT - NCERT CONTENT EXTRACTION:
+- For CBSE board, extract content from NCERT ${subject} textbook for ${gradeLabel}
+- Map out the key concepts, definitions, formulas, and relationships specifically related to "${topic}" as presented in NCERT
+- Include the hierarchical structure of concepts as they are organized in the NCERT chapter
+- Show connections between different aspects of the topic (e.g., for "Maxima and Minima" - show connections between derivatives, critical points, first derivative test, second derivative test, etc.)
+- Extract and organize important theorems, properties, and applications from the NCERT content
+
 Respond with valid JSON (no markdown) using this schema:
 {
   "centralIdea": string,
