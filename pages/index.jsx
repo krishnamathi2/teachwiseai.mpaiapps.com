@@ -1397,6 +1397,16 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     try {
       const gradeParam = GRADE_NUMBER_MAP[gradeId] ?? gradeId;
       const authHeaders = await getAuthHeaders(isGuestUser);
+      console.log('Making API call to /api/presentation-svg with:', {
+        subject, 
+        topic: trimmedTopic, 
+        grade: String(gradeParam),
+        slideCount: normalizedCount,
+        imageCount: normalizedImageCount,
+        useGPTI: settings.useGPTI,
+        useCG: settings.useCG
+      });
+      
       const response = await fetch("/api/presentation-svg", {
         method: "POST",
         headers: {
@@ -1414,20 +1424,28 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         }),
       });
 
+      console.log('API response status:', response.status, response.statusText);
+
       let payload = null;
       try {
         payload = await response.json();
+        console.log('API response payload:', payload);
       } catch (parseError) {
+        console.error('Failed to parse response:', parseError);
         throw new Error("Invalid response from server");
       }
 
       if (!response.ok) {
+        console.error('API error:', payload?.message);
         throw new Error(payload?.message || "Failed to generate SVG presentation");
       }
 
       if (!payload.base64 || !payload.filename) {
+        console.error('Missing data in payload:', { hasBase64: !!payload.base64, hasFilename: !!payload.filename });
         throw new Error("Missing presentation data");
       }
+      
+      console.log('Successfully received presentation data, downloading...');
 
       await handleGenerationConsumption("presentation");
 
@@ -1461,6 +1479,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
         });
       }, 3000);
     } catch (error) {
+      console.error('Presentation generation failed:', error);
       updateSubjectPresentationSettings(subjectKey, (current) => ({
         ...current,
         status: "error",
