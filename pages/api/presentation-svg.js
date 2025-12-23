@@ -19,6 +19,7 @@ export default async function handler(req, res) {
     board = "CBSE",
     periodMinutes = 40,
     slideCount,
+    imageCount,
     useGPTI = false,
     useCG = false,
   } = req.body || {};
@@ -32,9 +33,13 @@ export default async function handler(req, res) {
   const requestedSlideCount = slideCount
     ? Number.parseInt(slideCount, 10)
     : null;
+  
+  const requestedImageCount = imageCount !== undefined
+    ? Number.parseInt(imageCount, 10)
+    : requestedSlideCount; // Default to all slides having images
 
   try {
-    console.log("[presentation-svg] Generating lesson:", topic, "useGPTI:", useGPTI, "useCG:", useCG);
+    console.log("[presentation-svg] Generating lesson:", topic, "useGPTI:", useGPTI, "useCG:", useCG, "imageCount:", requestedImageCount);
 
     const lesson = await buildLessonWithAI({
       board,
@@ -52,7 +57,8 @@ export default async function handler(req, res) {
       gradeLabel,
       lesson,
       useGPTI,
-      useCG
+      useCG,
+      requestedImageCount
     );
 
     const base64 = deckBytes.toString("base64");
@@ -76,7 +82,8 @@ async function createSvgPresentationDeck(
   gradeLabel,
   lesson,
   useGPTI = false,
-  useCG = false
+  useCG = false,
+  imageCount = null
 ) {
   const pptx = new PptxGenJS();
 
@@ -86,8 +93,10 @@ async function createSvgPresentationDeck(
   pptx.title = `${topic} - ${subject}`;
 
   const slides = lesson.slides || [];
+  const totalSlides = slides.length;
+  const slidesWithImages = imageCount !== null ? Math.min(imageCount, totalSlides) : totalSlides;
   
-  console.log(`[Presentation] Creating deck with ${slides.length} slides`);
+  console.log(`[Presentation] Creating deck with ${slides.length} slides, ${slidesWithImages} will have images`);
   slides.forEach((s, i) => {
     console.log(`[Presentation] Slide ${i + 1}: "${s.title}" type=${s.type} bullets=${s.content?.bullets?.length || 0}`);
   });
@@ -124,11 +133,15 @@ async function createSvgPresentationDeck(
       }
     );
 
-    // Generate diagram based on mode
-    const diagramPrompt =
-      slideData.content?.diagramPrompt || `${topic} concept diagram`;
+    // Only add images to the first N slides based on imageCount
+    const shouldAddImage = index < slidesWithImages;
+    
+    if (shouldAddImage) {
+      // Generate diagram based on mode
+      const diagramPrompt =
+        slideData.content?.diagramPrompt || `${topic} concept diagram`;
 
-    if (useGPTI) {
+      if (useGPTI) {
       // Use GPT-4o to generate image
       try {
         const { generateSlideImageGPT4o } = await import("../../lib/gpt4oImageApi");
@@ -189,13 +202,17 @@ async function createSvgPresentationDeck(
         h: 5,
         sizing: { type: "contain", w: 5.5, h: 5 },
       });
+      }
     }
 
-    // Right content panel
+    // Right content panel - adjust position based on whether image exists
+    const contentX = shouldAddImage ? 6.2 : 0.5;
+    const contentW = shouldAddImage ? 6.2 : 11.5;
+    
     slide.addShape(pptx.ShapeType.rect, {
-      x: 6.2,
+      x: contentX,
       y: 1.7,
-      w: 6.2,
+      w: contentW,
       h: 5,
       fill: { color: "F1F5F9" },
       line: { color: "CBD5E1", width: 1 },
@@ -227,9 +244,9 @@ async function createSvgPresentationDeck(
     }
 
     slide.addText(contentText, {
-      x: 6.5,
+      x: contentX + 0.3,
       y: 2,
-      w: 5.6,
+      w: contentW - 0.6,
       h: 4.4,
       fontSize: 14,
       color: "0F172A",

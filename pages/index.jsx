@@ -440,6 +440,7 @@ const getInitialSubjectPresentationState = () => ({
   useGPTI: false,
   useCG: false,
   slideCount: "8",
+  imageCount: "8",
   topic: "",
   gptiTopic: "",
   cgTopic: "",
@@ -1356,6 +1357,9 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     const parsedCount = Number.parseInt(settings.slideCount, 10);
     const normalizedCount = Number.isFinite(parsedCount) ? parsedCount : 0;
 
+    const parsedImageCount = Number.parseInt(settings.imageCount, 10);
+    const normalizedImageCount = Number.isFinite(parsedImageCount) ? Math.min(parsedImageCount, normalizedCount) : normalizedCount;
+
     if (normalizedCount < 1 || normalizedCount > MAX_PRESENTATION_SLIDES) {
       updateSubjectPresentationSettings(subjectKey, (current) => ({
         ...current,
@@ -1403,6 +1407,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
           topic: trimmedTopic,
           grade: String(gradeParam),
           slideCount: normalizedCount,
+          imageCount: normalizedImageCount,
           useGPTI: settings.useGPTI || false,
           useCG: settings.useCG || false,
         }),
@@ -2842,6 +2847,39 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                               gradeConfig.id,
                                               subject,
                                               "slideCount",
+                                              event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                            )
+                                          }
+                                          style={{
+                                            padding: "8px 10px",
+                                            borderRadius: "8px",
+                                            border: "1px solid",
+                                            borderColor: theme.panelBorder,
+                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                            color: theme.text,
+                                          }}
+                                        />
+                                      </label>
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <span>Number of slides with images</span>
+                                        <input
+                                          type="number"
+                                          min={0}
+                                          max={Number.parseInt(presentationSettings.slideCount, 10) || MAX_PRESENTATION_SLIDES}
+                                          value={presentationSettings.imageCount}
+                                          onChange={(event) =>
+                                            handlePresentationFieldChange(
+                                              gradeConfig.id,
+                                              subject,
+                                              "imageCount",
                                               event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
                                             )
                                           }
