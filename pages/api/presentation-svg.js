@@ -202,13 +202,27 @@ async function createSvgPresentationDeck(
     });
 
     let contentText = "Key concepts";
+    const isQuestionSlide = slideData.type === "questions_quick_check" || slideData.type === "questions_exam_corner";
 
-    if (slideData.content?.bullets && slideData.content.bullets.length > 0) {
+    // Handle question slides
+    if (isQuestionSlide && slideData.content?.questionSet && slideData.content.questionSet.length > 0) {
+      contentText = slideData.content.questionSet
+        .map((q, i) => {
+          const questionNum = i + 1;
+          const correctAnswer = q.options?.[q.correctOptionIndex] || "N/A";
+          return `Q${questionNum}. ${q.stem}\n\nAnswer: ${correctAnswer}`;
+        })
+        .join("\n\n");
+    } 
+    // Handle regular slides with bullets
+    else if (slideData.content?.bullets && slideData.content.bullets.length > 0) {
       contentText = slideData.content.bullets
         .map((b, i) => `${i + 1}. ${b}`)
         .join("\n\n");
-    } else {
-      console.warn(`[Presentation] Slide ${index + 1} "${slideData.title}" has no bullets, using default text`);
+    } 
+    // Fallback for slides with no content
+    else {
+      console.warn(`[Presentation] Slide ${index + 1} "${slideData.title}" has no ${isQuestionSlide ? 'questions' : 'bullets'}, using default text`);
       contentText = `Content for ${slideData.title || topic}:\n\n• Key concepts and principles\n• Important points to remember\n• Applications and examples`;
     }
 
