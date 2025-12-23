@@ -202,7 +202,7 @@ async function createSvgPresentationDeck(
         h: 5,
         sizing: { type: "contain", w: 5.5, h: 5 },
       });
-      }
+    }
     }
 
     // Right content panel - adjust position based on whether image exists
