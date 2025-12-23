@@ -222,36 +222,6 @@ async function createSvgPresentationDeck(
         sizing: { type: "contain", w: 5.5, h: 5 },
       });
     }
-    }
-
-    // Right content panel - adjust position based on whether image exists
-    const contentX = shouldAddImage ? 6.2 : 0.5;
-    const contentW = shouldAddImage ? 6.2 : 11.5;
-    
-    slide.addShape(pptx.ShapeType.rect, {
-      x: contentX,
-      y: 1.7,
-      w: contentW,
-      h: 5,
-      fill: { color: "F1F5F9" },
-      line: { color: "CBD5E1", width: 1 },
-    });
-
-    let contentText = "Key concepts";
-    const isQuestionSlide = slideData.type === "questions_quick_check" || slideData.type === "questions_exam_corner";
-
-    // Handle question slides
-    if (isQuestionSlide && slideData.content?.questionSet && slideData.content.questionSet.length > 0) {
-      contentText = slideData.content.questionSet
-        .map((q, i) => {
-          const questionNum = i + 1;
-          const correctAnswer = q.options?.[q.correctOptionIndex] || "N/A";
-          return `Q${questionNum}. ${q.stem}\n\nAnswer: ${correctAnswer}`;
-        })
-        .join("\n\n");
-    } 
-    // Handle regular slides with bullets
-    else if (slideData.content?.bullets && slideData.content.bullets.length > 0) {
       contentText = slideData.content.bullets
         .map((b, i) => `${i + 1}. ${b}`)
         .join("\n\n");
