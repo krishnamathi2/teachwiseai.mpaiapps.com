@@ -437,7 +437,6 @@ const getInitialSubjectPresentationState = () => ({
   enabled: false,
   highResImages: false,
   svgAssets: false,
-  useCraiyon: false,
   useGPTI: false,
   useCG: false,
   slideCount: "8",
@@ -1330,7 +1329,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     console.log('Presentation settings:', settings);
 
     // Check which mode is enabled
-    if (!settings.useCraiyon && !settings.useGPTI && !settings.useCG && !settings.svgAssets) {
+    if (!settings.useGPTI && !settings.useCG && !settings.svgAssets) {
       console.log('No mode enabled, returning early');
       return;
     }
@@ -1404,7 +1403,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
           topic: trimmedTopic,
           grade: String(gradeParam),
           slideCount: normalizedCount,
-          useCraiyon: settings.useCraiyon || false,
           useGPTI: settings.useGPTI || false,
           useCG: settings.useCG || false,
         }),
@@ -1538,7 +1536,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
           topic: trimmedTopic,
           grade: String(gradeParam),
           slideCount: normalizedCount,
-          useCraiyon: settings.useCraiyon || false,
         }),
       });
 
@@ -2760,95 +2757,6 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                     paddingLeft: "26px",
                                   }}
                                 >
-                                  <label
-                                    style={{
-                                      display: "flex",
-                                      alignItems: "center",
-                                      gap: "8px",
-                                      fontSize: "0.85rem",
-                                      color: theme.isDark ? "#94a3b8" : "#475569",
-                                    }}
-                                  >
-                                    <input
-                                      type="checkbox"
-                                      checked={presentationSettings.useCraiyon}
-                                      onChange={(event) =>
-                                        handleSubjectPresentationOptionToggle(
-                                          gradeConfig.id,
-                                          subject,
-                                          "useCraiyon",
-                                          event.target.checked,
-                                        )
-                                      }
-                                      style={{ accentColor: theme.accent }}
-                                    />
-                                    Generate Presentations using CR
-                                  </label>
-                                  {presentationSettings.useCraiyon ? (
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "8px",
-                                        paddingLeft: "24px",
-                                      }}
-                                    >
-                                      <label
-                                        style={{
-                                          display: "flex",
-                                          flexDirection: "column",
-                                          gap: "4px",
-                                          fontSize: "0.82rem",
-                                          color: theme.isDark ? "#cbd5f5" : "#334155",
-                                        }}
-                                      >
-                                        <span>Presentation topic</span>
-                                        <input
-                                          type="text"
-                                          value={presentationSettings.topic}
-                                          onChange={(event) =>
-                                            handlePresentationFieldChange(
-                                              gradeConfig.id,
-                                              subject,
-                                              "topic",
-                                              event.target.value,
-                                            )
-                                          }
-                                          placeholder="Ex: Photosynthesis in plants"
-                                          style={{
-                                            padding: "8px 10px",
-                                            borderRadius: "8px",
-                                            border: "1px solid",
-                                            borderColor: theme.panelBorder,
-                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
-                                            color: theme.text,
-                                          }}
-                                        />
-                                      </label>
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          triggerSvgPresentation(gradeConfig.id, subject)
-                                        }
-                                        style={{
-                                          padding: "8px 16px",
-                                          borderRadius: "10px",
-                                          border: "none",
-                                          background: theme.accent,
-                                          color: theme.isDark ? "#0b1120" : "#ffffff",
-                                          fontWeight: 600,
-                                          cursor: "pointer",
-                                        }}
-                                        disabled={
-                                          presentationStatus === "loading" || shouldDisableGeneration
-                                        }
-                                      >
-                                        {presentationStatus === "loading"
-                                          ? "Generating..."
-                                          : "Generate high-res deck"}
-                                      </button>
-                                    </div>
-                                  ) : null}
                                   <label
                                     style={{
                                       display: "flex",

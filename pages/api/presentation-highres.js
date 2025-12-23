@@ -22,7 +22,7 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { subject, topic, grade, slideCount, useCraiyon = false } = req.body || {};
+  const { subject, topic, grade, slideCount } = req.body || {};
 
   if (!subject || !topic) {
     res.status(400).json({ message: "Subject and topic are required" });
@@ -40,9 +40,7 @@ export default async function handler(req, res) {
 
   try {
     const descriptors = buildPresentationDescriptors(subject, topic, gradeLabel, totalSlides);
-    const slideImages = useCraiyon 
-      ? await generateCraiyonPresentationSlides(descriptors)
-      : await generatePresentationSlides(descriptors);
+    const slideImages = await generatePresentationSlides(descriptors);
 
     if (slideImages.length === 0) {
       throw new Error("Unable to generate slides");
@@ -130,41 +128,6 @@ async function generatePresentationSlides(descriptors = []) {
   }
 
   return slideBuffers;
-}
-
-async function generateCraiyonPresentationSlides(descriptors = []) {
-  const { generateCraiyonImage } = await import("../../lib/craiyonApi");
-  const slideBuffers = [];
-
-  // eslint-disable-next-line no-restricted-syntax
-  for (const descriptor of descriptors) {
-    try {
-      // eslint-disable-next-line no-console
-      console.log(`Generating Craiyon slide ${descriptor.index}`);
-      
-      const prompt = buildCraiyonPrompt(descriptor);
-      // eslint-disable-next-line no-await-in-loop
-      const base64Image = await generateCraiyonImage(prompt);
-      
-      // Convert base64 to buffer
-      const buffer = Buffer.from(base64Image, 'base64');
-      slideBuffers.push(buffer);
-      
-      // eslint-disable-next-line no-console
-      console.log(`Craiyon slide ${descriptor.index} generated successfully`);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.error(`Craiyon slide ${descriptor.index} failed:`, error);
-      throw new Error(`Unable to generate Craiyon slide ${descriptor.index}: ${error.message}`);
-    }
-  }
-
-  return slideBuffers;
-}
-
-function buildCraiyonPrompt(descriptor) {
-  const { heading, topic, subject, gradeLabel } = descriptor;
-  return `Educational illustration for ${heading} about ${topic}, ${subject} subject for ${gradeLabel} students, colorful diagram, simple, clear, educational`;
 }
 
 async function requestStabilitySlide(descriptor) {
