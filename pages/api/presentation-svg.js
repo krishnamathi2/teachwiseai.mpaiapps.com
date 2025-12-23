@@ -86,6 +86,11 @@ async function createSvgPresentationDeck(
   pptx.title = `${topic} - ${subject}`;
 
   const slides = lesson.slides || [];
+  
+  console.log(`[Presentation] Creating deck with ${slides.length} slides`);
+  slides.forEach((s, i) => {
+    console.log(`[Presentation] Slide ${i + 1}: "${s.title}" type=${s.type} bullets=${s.content?.bullets?.length || 0}`);
+  });
 
   for (const [index, slideData] of slides.entries()) {
     const slide = pptx.addSlide();
@@ -198,10 +203,13 @@ async function createSvgPresentationDeck(
 
     let contentText = "Key concepts";
 
-    if (slideData.content?.bullets) {
+    if (slideData.content?.bullets && slideData.content.bullets.length > 0) {
       contentText = slideData.content.bullets
         .map((b, i) => `${i + 1}. ${b}`)
         .join("\n\n");
+    } else {
+      console.warn(`[Presentation] Slide ${index + 1} "${slideData.title}" has no bullets, using default text`);
+      contentText = `Content for ${slideData.title || topic}:\n\n• Key concepts and principles\n• Important points to remember\n• Applications and examples`;
     }
 
     slide.addText(contentText, {
