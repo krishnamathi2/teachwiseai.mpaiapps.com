@@ -24,7 +24,19 @@ export default async function handler(req, res) {
     useCG = false,
   } = req.body || {};
 
+  console.log("[presentation-svg] Request received:", {
+    subject,
+    topic,
+    grade,
+    board,
+    slideCount,
+    imageCount,
+    useGPTI,
+    useCG
+  });
+
   if (!subject || !topic) {
+    console.error("[presentation-svg] Missing required fields:", { subject, topic });
     res.status(400).json({ message: "Subject and topic are required" });
     return;
   }
@@ -69,9 +81,16 @@ export default async function handler(req, res) {
       slideCount: lesson.slides?.length || 0,
     });
   } catch (error) {
-    console.error("SVG presentation generation failed", error);
+    console.error("SVG presentation generation failed:", error);
+    console.error("Error stack:", error.stack);
+    console.error("Error details:", {
+      name: error.name,
+      message: error.message,
+      cause: error.cause
+    });
     res.status(500).json({
       message: error.message || "Failed to generate presentation",
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 }
