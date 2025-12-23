@@ -19,6 +19,8 @@ export default async function handler(req, res) {
     board = "CBSE",
     periodMinutes = 40,
     slideCount,
+    useGPTI = false,
+    useCG = false,
   } = req.body || {};
 
   if (!subject || !topic) {
@@ -32,7 +34,7 @@ export default async function handler(req, res) {
     : null;
 
   try {
-    console.log("[presentation-svg] Generating lesson:", topic);
+    console.log("[presentation-svg] Generating lesson:", topic, "useGPTI:", useGPTI, "useCG:", useCG);
 
     const lesson = await buildLessonWithAI({
       board,
@@ -48,7 +50,9 @@ export default async function handler(req, res) {
       subject,
       topic,
       gradeLabel,
-      lesson
+      lesson,
+      useGPTI,
+      useCG
     );
 
     const base64 = deckBytes.toString("base64");
@@ -70,7 +74,9 @@ async function createSvgPresentationDeck(
   subject,
   topic,
   gradeLabel,
-  lesson
+  lesson,
+  useGPTI = false,
+  useCG = false
 ) {
   const pptx = new PptxGenJS();
 
@@ -113,29 +119,72 @@ async function createSvgPresentationDeck(
       }
     );
 
-    // SVG ONLY (no image APIs)
+    // Generate diagram based on mode
     const diagramPrompt =
       slideData.content?.diagramPrompt || `${topic} concept diagram`;
 
-    const svgContent = generateTopicSpecificSvg(
-      topic,
-      diagramPrompt,
-      subject,
-      index,
-      slideData.title,
-      slideData.type
-    );
+    if (useGPTI) {
+      // Use GPT-4o to generate image
+      try {
+        const { generateSlideImageGPT4o } = await import("../../lib/gpt4oImageApi");
+        console.log(`[GPTI] Generating image for slide ${index + 1}: ${slideData.title}`);
+        const base64Image = await generateSlideImageGPT4o(
+          topic,
+          subject,
+          slideData.title,
+          index
+        );
+        
+        slide.addImage({
+          data: `data:image/png;base64,${base64Image}`,
+          x: 0.5,
+          y: 1.7,
+          w: 5.5,
+          h: 5,
+          sizing: { type: "contain", w: 5.5, h: 5 },
+        });
+      } catch (error) {
+        console.error(`[GPTI] Failed to generate image for slide ${index + 1}:`, error);
+        // Fallback to SVG
+        const svgContent = generateTopicSpecificSvg(
+          topic,
+          diagramPrompt,
+          subject,
+          index,
+          slideData.title,
+          slideData.type
+        );
+        slide.addImage({
+          data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString("base64")}`,
+          x: 0.5,
+          y: 1.7,
+          w: 5.5,
+          h: 5,
+          sizing: { type: "contain", w: 5.5, h: 5 },
+        });
+      }
+    } else {
+      // Use SVG generation (default)
+      const svgContent = generateTopicSpecificSvg(
+        topic,
+        diagramPrompt,
+        subject,
+        index,
+        slideData.title,
+        slideData.type
+      );
 
-    slide.addImage({
-      data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString(
-        "base64"
-      )}`,
-      x: 0.5,
-      y: 1.7,
-      w: 5.5,
-      h: 5,
-      sizing: { type: "contain", w: 5.5, h: 5 },
-    });
+      slide.addImage({
+        data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString(
+          "base64"
+        )}`,
+        x: 0.5,
+        y: 1.7,
+        w: 5.5,
+        h: 5,
+        sizing: { type: "contain", w: 5.5, h: 5 },
+      });
+    }
 
     // Right content panel
     slide.addShape(pptx.ShapeType.rect, {
