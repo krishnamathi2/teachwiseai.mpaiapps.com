@@ -153,7 +153,8 @@ const getAuthHeaders = async (isGuestUser) => {
         headers["Authorization"] = `Bearer ${data.session.access_token}`;
       }
     } catch (error) {
-      console.warn("Failed to get auth token", error);
+      console.warn("Failed to get auth token, continuing without auth header", error);
+      // Continue without auth header - don't throw
     }
   }
 
