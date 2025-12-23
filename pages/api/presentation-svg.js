@@ -12,7 +12,14 @@ export default async function handler(req, res) {
     return;
   }
 
-  const { subject, topic, grade, board = "CBSE", periodMinutes = 40, slideCount, useCraiyon = false, useGPTI = false, useCG = false } = req.body || {};
+  const {
+    subject,
+    topic,
+    grade,
+    board = "CBSE",
+    periodMinutes = 40,
+    slideCount,
+  } = req.body || {};
 
   if (!subject || !topic) {
     res.status(400).json({ message: "Subject and topic are required" });
@@ -20,13 +27,13 @@ export default async function handler(req, res) {
   }
 
   const gradeLabel = buildGradeLabel(grade);
-  
-  // Use provided slideCount or calculate from periodMinutes
-  const requestedSlideCount = slideCount ? Number.parseInt(slideCount, 10) : null;
+  const requestedSlideCount = slideCount
+    ? Number.parseInt(slideCount, 10)
+    : null;
 
   try {
-    // Generate AI lesson content
-    console.log('[presentation-svg] Calling buildLessonWithAI for topic:', topic);
+    console.log("[presentation-svg] Generating lesson:", topic);
+
     const lesson = await buildLessonWithAI({
       board,
       classLevel: gradeLabel,
@@ -36,43 +43,48 @@ export default async function handler(req, res) {
       language: "English",
       requestedSlideCount,
     });
-    console.log('[presentation-svg] Lesson generated successfully, slide count:', lesson.slides?.length);
 
-    const deckBytes = await createSvgPresentationDeck(subject, topic, gradeLabel, lesson, useCraiyon, useGPTI, useCG);
+    const deckBytes = await createSvgPresentationDeck(
+      subject,
+      topic,
+      gradeLabel,
+      lesson
+    );
+
     const base64 = deckBytes.toString("base64");
-    const filename = buildPresentationFilename(subject, topic);
 
     res.status(200).json({
       base64,
-      filename,
+      filename: `${subject}-${topic}.pptx`,
       slideCount: lesson.slides?.length || 0,
     });
   } catch (error) {
-    // eslint-disable-next-line no-console
     console.error("SVG presentation generation failed", error);
-    console.error("Error type:", error.constructor.name);
-    console.error("Error status:", error.status);
-    console.error("Error message:", error.message);
-    res.status(500).json({ message: error.message || "Failed to generate presentation" });
+    res.status(500).json({
+      message: error.message || "Failed to generate presentation",
+    });
   }
 }
 
-async function createSvgPresentationDeck(subject, topic, gradeLabel, lesson, useCraiyon = false, useGPTI = false, useCG = false) {
+async function createSvgPresentationDeck(
+  subject,
+  topic,
+  gradeLabel,
+  lesson
+) {
   const pptx = new PptxGenJS();
-  
-  // Set presentation properties
+
   pptx.layout = "LAYOUT_WIDE";
-  pptx.author = "TeachwiseAI";
+  pptx.author = "TeachWiseAI";
   pptx.subject = `${gradeLabel} ${subject}`;
   pptx.title = `${topic} - ${subject}`;
 
   const slides = lesson.slides || [];
 
-  // eslint-disable-next-line no-restricted-syntax
   for (const [index, slideData] of slides.entries()) {
     const slide = pptx.addSlide();
-    
-    // Add main title - larger and bolder
+
+    // Title
     slide.addText(slideData.title || topic, {
       x: 0.5,
       y: 0.3,
@@ -84,118 +96,48 @@ async function createSvgPresentationDeck(subject, topic, gradeLabel, lesson, use
       fontFace: "Arial",
     });
 
-    // Add slide type as subtitle
-    const subtitleText = slideData.type ? slideData.type.replace(/_/g, " ").toUpperCase() : "OVERVIEW";
-    slide.addText(subtitleText, {
+    // Subtitle
+    slide.addText(
+      slideData.type
+        ? slideData.type.replace(/_/g, " ").toUpperCase()
+        : "OVERVIEW",
+      {
+        x: 0.5,
+        y: 1.1,
+        w: "90%",
+        h: 0.4,
+        fontSize: 22,
+        bold: true,
+        color: "3B82F6",
+        fontFace: "Arial",
+      }
+    );
+
+    // SVG ONLY (no image APIs)
+    const diagramPrompt =
+      slideData.content?.diagramPrompt || `${topic} concept diagram`;
+
+    const svgContent = generateTopicSpecificSvg(
+      topic,
+      diagramPrompt,
+      subject,
+      index,
+      slideData.title,
+      slideData.type
+    );
+
+    slide.addImage({
+      data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString(
+        "base64"
+      )}`,
       x: 0.5,
-      y: 1.1,
-      w: "90%",
-      h: 0.4,
-      fontSize: 22,
-      bold: true,
-      color: "3B82F6",
-      fontFace: "Arial",
+      y: 1.7,
+      w: 5.5,
+      h: 5,
+      sizing: { type: "contain", w: 5.5, h: 5 },
     });
 
-    // Add topic-specific SVG graphic using diagram prompt
-    const diagramPrompt = slideData.content?.diagramPrompt || `${topic} concept diagram`;
-    const slideTitle = slideData.title || topic;
-    
-    if (useCG) {
-      // Use DALL-E (via GPT-4o) to generate an image for CG presentations
-      try {
-        const { generateSlideImageGPT4o } = await import("../../lib/gpt4oImageApi");
-        const dalleImage = await generateSlideImageGPT4o(topic, subject, slideTitle, index);
-        
-        slide.addImage({
-          data: `data:image/png;base64,${dalleImage}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          sizing: { type: "contain", w: 5.5, h: 5 },
-        });
-      } catch (error) {
-        console.error("DALL-E generation failed, falling back to SVG:", error);
-        // Fallback to SVG if DALL-E fails
-        const svgContent = generateTopicSpecificSvg(topic, diagramPrompt, subject, index, slideTitle, slideData.type);
-        slide.addImage({
-          data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString("base64")}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          sizing: { type: "contain", w: 5.5, h: 5 },
-        });
-      }
-    } else if (useGPTI) {
-      // Use GPT-4o (DALL-E 3) to generate an image
-      try {
-        const { generateSlideImageGPT4o } = await import("../../lib/gpt4oImageApi");
-        const gpt4oImage = await generateSlideImageGPT4o(topic, subject, slideTitle, index);
-        
-        slide.addImage({
-          data: `data:image/png;base64,${gpt4oImage}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          sizing: { type: "contain", w: 5.5, h: 5 },
-        });
-      } catch (error) {
-        console.error("GPT-4o generation failed, falling back to SVG:", error);
-        // Fallback to SVG if GPT-4o fails
-        const svgContent = generateTopicSpecificSvg(topic, diagramPrompt, subject, index, slideTitle, slideData.type);
-        slide.addImage({
-          data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString("base64")}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          sizing: { type: "contain", w: 5.5, h: 5 },
-        });
-      }
-    } else if (useCraiyon) {
-      // Use Craiyon API to generate an image
-      try {
-        const { generateSlideImage } = await import("../../lib/craiyonApi");
-        const craiyonImage = await generateSlideImage(topic, subject, slideTitle);
-        
-        slide.addImage({
-          data: `data:image/png;base64,${craiyonImage}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          sizing: { type: "contain", w: 5.5, h: 5 },
-        });
-      } catch (error) {
-        console.error("Craiyon generation failed, falling back to SVG:", error);
-        // Fallback to SVG if Craiyon fails
-        const svgContent = generateTopicSpecificSvg(topic, diagramPrompt, subject, index, slideTitle, slideData.type);
-        slide.addImage({
-          data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString("base64")}`,
-          x: 0.5,
-          y: 1.7,
-          w: 5.5,
-          h: 5,
-          sizing: { type: "contain", w: 5.5, h: 5 },
-        });
-      }
-    } else {
-      // Use SVG diagrams
-      const svgContent = generateTopicSpecificSvg(topic, diagramPrompt, subject, index, slideTitle, slideData.type);
-      slide.addImage({
-        data: `data:image/svg+xml;base64,${Buffer.from(svgContent).toString("base64")}`,
-        x: 0.5,
-        y: 1.7,
-        w: 5.5,
-        h: 5,
-        sizing: { type: "contain", w: 5.5, h: 5 },
-      });
-    }
-
-    // Add content box with clear paragraphs - right side
+    // Right content panel
     slide.addShape(pptx.ShapeType.rect, {
       x: 6.2,
       y: 1.7,
@@ -205,16 +147,12 @@ async function createSvgPresentationDeck(subject, topic, gradeLabel, lesson, use
       line: { color: "CBD5E1", width: 1 },
     });
 
-    // Build content text from bullets or other content
-    let contentText = "";
-    if (slideData.content?.bullets && Array.isArray(slideData.content.bullets)) {
-      contentText = slideData.content.bullets.map((bullet, i) => `${i + 1}. ${bullet}`).join("\n\n");
-    } else if (slideData.content?.questionSet && Array.isArray(slideData.content.questionSet)) {
-      contentText = slideData.content.questionSet.map((q, i) => 
-        `Q${i + 1}: ${q.stem}\nA) ${q.options[0]}\nB) ${q.options[1]}\nC) ${q.options[2]}\nD) ${q.options[3]}`
-      ).join("\n\n");
-    } else {
-      contentText = `Key concepts about ${topic}`;
+    let contentText = "Key concepts";
+
+    if (slideData.content?.bullets) {
+      contentText = slideData.content.bullets
+        .map((b, i) => `${i + 1}. ${b}`)
+        .join("\n\n");
     }
 
     slide.addText(contentText, {
@@ -229,125 +167,30 @@ async function createSvgPresentationDeck(subject, topic, gradeLabel, lesson, use
       lineSpacing: 22,
     });
 
-    // Add footer
-    slide.addText(`${gradeLabel} ${subject} | Slide ${index + 1} of ${slides.length}`, {
-      x: 0.5,
-      y: 6.9,
-      w: "90%",
-      h: 0.3,
-      fontSize: 11,
-      color: "64748B",
-      fontFace: "Arial",
-      align: "center",
-    });
+    slide.addText(
+      `${gradeLabel} ${subject} | Slide ${index + 1} of ${slides.length}`,
+      {
+        x: 0.5,
+        y: 6.9,
+        w: "90%",
+        h: 0.3,
+        fontSize: 11,
+        color: "64748B",
+        fontFace: "Arial",
+        align: "center",
+      }
+    );
   }
 
-  // Generate PowerPoint file as buffer
-  const pptxBuffer = await pptx.write({ outputType: "nodebuffer" });
-  return pptxBuffer;
+  return await pptx.write({ outputType: "nodebuffer" });
 }
 
-async function generateSlideContent(subject, topic, gradeLabel, slideCount) {
-  const phases = [
-    {
-      title: topic,
-      subtitle: "Introduction & Overview",
-      template: (t, s, g) => [
-        `${t} represents a crucial area of study in ${s} for ${g} students. This topic explores fundamental concepts that form the foundation of advanced learning.`,
-        
-        `Key areas covered include the basic definitions, historical context, and modern applications. Students will understand both theoretical frameworks and practical implementations.`,
-        
-        `Real-world significance: This concept has widespread applications in industry, research, medicine, technology, and environmental science, making it essential knowledge for future careers.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Core Concepts & Key Definitions",
-      template: (t, s, g) => [
-        `Definition: ${t} encompasses the essential principles and mechanisms that govern this area of ${s}. Understanding terminology is critical for mastering the subject.`,
-        
-        `Fundamental Components: The topic involves multiple interconnected systems including structural elements, functional processes, and regulatory mechanisms that work together.`,
-        
-        `Scientific Basis: Built on established theories and experimental evidence, this concept demonstrates clear cause-and-effect relationships with measurable outcomes and predictable patterns.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Detailed Explanation & Mechanisms",
-      template: (t, s, g) => [
-        `How it Works: ${t} operates through specific processes involving sequential steps, biochemical pathways, physical transformations, or systematic procedures depending on the context.`,
-        
-        `Key Processes: The mechanisms include initiation phases, active operation periods, regulation checkpoints, and completion stages. Each step is controlled by specific factors and conditions.`,
-        
-        `Important Variables: Temperature, pH levels, concentration, time duration, environmental conditions, and catalytic agents all play crucial roles in determining outcomes and efficiency.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Real-World Examples & Case Studies",
-      template: (t, s, g) => [
-        `Everyday Applications: ${t} manifests in numerous daily life scenarios - from household processes to commercial products, transportation systems to communication technologies.`,
-        
-        `Industry Examples: Manufacturing sectors, pharmaceutical companies, agricultural operations, and technology firms extensively utilize these principles for product development and quality control.`,
-        
-        `Notable Case Studies: Historical breakthroughs, famous experiments, landmark discoveries, and modern innovations demonstrate the practical impact and transformative potential of this knowledge.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Practical Applications & Impact",
-      template: (t, s, g) => [
-        `Healthcare & Medicine: ${t} plays vital roles in disease diagnosis, treatment development, vaccine production, drug formulation, medical device engineering, and therapeutic interventions.`,
-        
-        `Industrial & Commercial Uses: Food processing, waste management, energy production, material synthesis, quality assurance, biotechnology applications, and manufacturing optimization.`,
-        
-        `Environmental Significance: Pollution control, ecosystem restoration, sustainable resource management, climate change mitigation, biodiversity conservation, and renewable energy development.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Problem Solving & Analysis",
-      template: (t, s, g) => [
-        `Common Challenges: Students often struggle with complex terminology, interconnected concepts, quantitative calculations, abstract visualizations, and application of theory to novel situations.`,
-        
-        `Solution Strategies: Break problems into smaller steps, identify given information and unknowns, apply relevant formulas and principles, verify units and dimensions, check answer reasonability.`,
-        
-        `Exam Preparation Tips: Focus on concept understanding over memorization, practice diverse problem types, create visual diagrams, summarize key points, review common mistakes, attempt past papers.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Key Takeaways & Essential Facts",
-      template: (t, s, g) => [
-        `Critical Points to Remember: ${t} involves specific processes, defined conditions, measurable outcomes, and practical applications. Master the core vocabulary, key equations, and fundamental principles.`,
-        
-        `Connections to Other Topics: This concept links to cellular biology, chemical reactions, energy transformations, genetic mechanisms, ecological relationships, and technological innovations in ${s}.`,
-        
-        `Assessment Focus: Exam questions typically test definition recall, process explanation, data analysis, experimental design, application scenarios, and critical thinking about limitations and improvements.`,
-      ],
-    },
-    {
-      title: topic,
-      subtitle: "Summary, Review & Future Learning",
-      template: (t, s, g) => [
-        `Comprehensive Recap: ${t} encompasses definitions, mechanisms, applications, and significance. We explored how it works, why it matters, and where it applies in real-world contexts.`,
-        
-        `Discussion Questions: How has this changed modern life? What are ethical considerations? What future developments are expected? How does it address global challenges? What careers utilize this knowledge?`,
-        
-        `Next Steps: Advanced topics include molecular details, biotechnology applications, genetic engineering, nanotechnology integration, artificial intelligence implementations, and cutting-edge research frontiers.`,
-      ],
-    },
-  ];
+/* 
+  NOTE:
+  generateTopicSpecificSvg(...) is unchanged.
+  Keep your existing SVG generator exactly as-is.
+*/
 
-  return Array.from({ length: slideCount }).map((_, index) => {
-    const phase = phases[index] || phases[phases.length - 1];
-    return {
-      title: phase.title,
-      subtitle: phase.subtitle,
-      paragraphs: phase.template(topic, subject, gradeLabel),
-    };
-  });
-}
 
 function generateTopicSpecificSvg(topic, diagramPrompt, subject, index, slideTitle = "", slideType = "") {
   const colors = ["#3B82F6", "#8B5CF6", "#EC4899", "#F59E0B", "#10B981", "#06B6D4", "#6366F1", "#EF4444"];
