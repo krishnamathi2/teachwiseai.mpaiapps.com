@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TeachWise – Presentation Generator</title>
+  <style>
+    body {
+      background: #0f172a;
+      color: #fff;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+    input, select, button {
+      padding: 8px;
+      margin: 6px 0;
+      width: 250px;
+    }
+    button {
+      cursor: pointer;
+      background: #2563eb;
+      color: white;
+      border: none;
+    }
+    .slide-preview {
+      background: #1e293b;
+      padding: 12px;
+      margin: 12px 0;
+      border-radius: 6px;
+    }
+    img {
+      max-width: 100%;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>CBSE Presentation Generator</h2>
+
+  <label>Subject</label><br />
+  <select id="subject">
+    <option>Chemistry</option>
+    <option>Physics</option>
+    <option>Biology</option>
+  </select><br />
+
+  <label>Grade</label><br />
+  <select id="grade">
+    <option>10</option>
+    <option>11</option>
+    <option selected>12</option>
+  </select><br />
+
+  <label>Topic</label><br />
+  <input id="topic" placeholder="Enter topic" /><br />
+
+  <label>Slide Count</label><br />
+  <input id="slideCount" type="number" value="8" /><br />
+
+  <label>Images Count</label><br />
+  <input id="imageCount" type="number" value="8" /><br />
+
+  <label>
+    <input type="checkbox" id="useImages" checked />
+    Generate with images
+  </label><br /><br />
+
+  <button id="generateDeck">Generate High-Res Deck</button>
+
+  <hr />
+  <div id="slidesContainer"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
