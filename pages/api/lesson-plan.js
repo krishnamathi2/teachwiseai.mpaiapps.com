@@ -351,8 +351,29 @@ async function createLessonPlanPdf(plan, { subject, topic, gradeLabel }) {
   };
 
   const drawBulletList = (items) => {
+    // Replace unsupported Unicode math symbols with ASCII fallbacks
+    const asciiFallback = (str) =>
+      str
+        .replace(/⊆/g, '<=')
+        .replace(/⊂/g, '<')
+        .replace(/⊇/g, '>=')
+        .replace(/⊃/g, '>')
+        .replace(/∪/g, 'U')
+        .replace(/∩/g, 'n')
+        .replace(/∈/g, 'in')
+        .replace(/∉/g, 'not-in')
+        .replace(/∅/g, 'empty')
+        .replace(/≈/g, '~')
+        .replace(/≤/g, '<=')
+        .replace(/≥/g, '>=')
+        .replace(/±/g, '+/-')
+        .replace(/÷/g, '/')
+        .replace(/×/g, 'x')
+        .replace(/√/g, 'sqrt')
+        .replace(/∞/g, 'infty');
     items.forEach((item) => {
-      const lines = wrapText(item, regularFont, bodySize, maxWidth - 20);
+      const safeItem = asciiFallback(item);
+      const lines = wrapText(safeItem, regularFont, bodySize, maxWidth - 20);
       if (lines.length === 0) {
         return;
       }

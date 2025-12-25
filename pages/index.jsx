@@ -18,12 +18,22 @@ const CREDITS_PER_GENERATION = 10;
 const GENERAL_USERS_STORAGE_KEY = "teachwiseai:generalUsers";
 
 const readStoredCredits = () => {
+  // Return mock credits in local development
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return 10000;
+  }
+  
   if (typeof window === "undefined") return 0;
   const stored = window.localStorage.getItem("teachwiseai:credits");
   return stored ? parseInt(stored, 10) : 0;
 };
 
 const readStoredEmail = () => {
+  // Return mock email in local development
+  if (typeof window !== "undefined" && window.location.hostname === "localhost") {
+    return "dev@localhost";
+  }
+  
   if (typeof window === "undefined") return null;
 
   try {
@@ -357,6 +367,7 @@ const CreditCounterBadge = ({
             </button>
           </div>
         ) : null}
+          {/* Checkboxes removed from user info box. Place them only in the main content area below the welcome message. */}
       </div>
     </div>
   );
@@ -441,6 +452,15 @@ const getInitialSubjectPresentationState = () => ({
   useCG: false,
   slideCount: "8",
   imageCount: "8",
+  includeImages: false,
+  includeContentAndImages: false,
+  highResolution: false,
+  mediumResolution: false,
+  lowResolution: false,
+  includeContentOnly: false,
+  includeImageOnly: false,
+  contentOnlyCount: "0",
+  imageOnlyCount: "0",
   topic: "",
   gptiTopic: "",
   cgTopic: "",
@@ -654,7 +674,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
   const [grade8, setGrade8] = useState(false);
   const [grade7, setGrade7] = useState(false);
   const [grade6, setGrade6] = useState(false);
-  const [selectedCountry, setSelectedCountry] = useState(null);
+  const [selectedCountry, setSelectedCountry] = useState("india");
   const [selectedBoard, setSelectedBoard] = useState(boardLabel);
   const [boardSelections, setBoardSelections] = useState({ ...DEFAULT_BOARD_SELECTIONS });
   const [stateBoardSelections, setStateBoardSelections] = useState({ ...DEFAULT_STATE_SELECTIONS });
@@ -1336,15 +1356,21 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     }
 
     // Select the appropriate topic based on the mode
-    const trimmedTopic = settings.useGPTI 
+    let trimmedTopic = settings.useGPTI 
       ? (settings.gptiTopic || "").trim()
       : settings.useCG
       ? (settings.cgTopic || "").trim()
       : (settings.topic || "").trim();
-    
+
+    // Inject NCERT-aligned template if useGPTI and default option are both true
+    if (settings.useGPTI && settings.includeContentAndImages) {
+      trimmedTopic = `You are an expert CBSE Class 12 Mathematics teacher.\n\nGenerate a classroom-ready presentation for CBSE Grade 12 Mathematics strictly aligned with the NCERT syllabus.\n\nSubject: Mathematics\nGrade: 12 (CBSE)\n\nCreate a structured presentation with clear explanations suitable for students.\n\nFor each slide:\n- Use simple, exam-oriented language\n- Objectives\n- Explain concepts step by step\n- Follow NCERT definitions and notation\n- Avoid unnecessary theory or storytelling\n- MCQs\n\nInclude:\n- Concept explanation\n- Key formulas (clearly highlighted)\n- One worked example where appropriate\n- Visual representations such as graphs, diagrams, or coordinate axes wherever applicable\n\nImage generation instructions:\n- Generate one educational image per relevant slide\n- Use GPT-Image-1 with **medium quality**\n- Images must be textbook-style and educational\n- Flat, clean diagrams with sharp lines\n- Accurate mathematical symbols and notation\n- Clear graphs with labeled axes\n- Minimal, distraction-free background\n- No artistic or decorative elements\n- No watermark, no logo\n\nPresentation structure:\n- Title slide\n- Concept slides (core explanations)\n- Example / application slide\n- Summary or key points slide\n\nMaintain:\n- High clarity\n- Minimal distraction\n- Exam-focused content\n- Consistent formatting across slides`;
+    }
+
     console.log('Trimmed topic:', trimmedTopic);
-    
+
     if (!trimmedTopic) {
+      alert("Please enter the topic");
       console.log('Topic is empty, setting missing-topic status');
       updateSubjectPresentationSettings(subjectKey, (current) => ({
         ...current,
@@ -1361,9 +1387,20 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
     const normalizedImageCount = Number.isFinite(parsedImageCount) ? Math.min(parsedImageCount, normalizedCount) : normalizedCount;
 
     if (normalizedCount < 1 || normalizedCount > MAX_PRESENTATION_SLIDES) {
+      alert(`Please enter a valid number of slides (1-${MAX_PRESENTATION_SLIDES})`);
       updateSubjectPresentationSettings(subjectKey, (current) => ({
         ...current,
         status: "invalid-count",
+        error: null,
+      }));
+      return;
+    }
+
+    if (normalizedImageCount < 0 || normalizedImageCount > normalizedCount) {
+      alert(`Please enter a valid number of images (0-${normalizedCount})`);
+      updateSubjectPresentationSettings(subjectKey, (current) => ({
+        ...current,
+        status: "invalid-image-count",
         error: null,
       }));
       return;
@@ -2418,80 +2455,8 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
 
       {isBoardSelectionPage && (
         <>
-          <p
-            style={{
-              margin: "0 0 12px 0",
-              color: theme.isDark ? "#cbd5f5" : "#475569",
-              fontSize: "0.95rem",
-            }}
-          >
-            Please start by clicking your relevant country
-          </p>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "10px",
-              alignItems: "flex-start",
-              marginBottom: "16px",
-            }}
-          >
-            {COUNTRY_OPTIONS.map((country) => (
-              <label
-                key={country.id}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "10px",
-                  fontSize: "1rem",
-                  fontWeight: 500,
-                  color: theme.text,
-                  opacity: country.supported ? 1 : 0.85,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedCountry === country.id}
-                  onChange={() => handleCountrySelection(country.id)}
-                  style={{ accentColor: theme.accent }}
-                />
-                {country.label}
-                {!country.supported ? (
-                  <span
-                    style={{
-                      marginLeft: "4px",
-                      fontSize: "0.8rem",
-                      color: theme.isDark ? "#facc15" : "#b45309",
-                      fontWeight: 600,
-                    }}
-                  >
-                    Coming soon
-                  </span>
-                ) : null}
-              </label>
-            ))}
-          </div>
-
-          {unsupportedCountryMessage && (
-            <div
-              style={{
-                marginBottom: "20px",
-                padding: "12px 16px",
-                borderRadius: "14px",
-                border: "1px solid",
-                borderColor: theme.panelBorder,
-                background: theme.isDark ? "rgba(250, 204, 21, 0.1)" : "rgba(251, 191, 36, 0.15)",
-                color: theme.isDark ? "#fde68a" : "#92400e",
-                width: "100%",
-                maxWidth: "640px",
-                textAlign: "left",
-              }}
-            >
-              {unsupportedCountryMessage}
-            </div>
-          )}
-
-          {isIndiaSelected && (
+          {/* Country selection removed - directly show board selection */}
+          {true && (
             <div
               style={{
                 display: "flex",
@@ -2520,7 +2485,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
             </div>
           )}
 
-          {isIndiaSelected && boardSelections.state && (
+          {true && boardSelections.state && (
             <div
               style={{
                 display: "grid",
@@ -2608,6 +2573,35 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
             <span style={{ color: theme.text, cursor: "pointer" }}>
               Visit Official Website
             </span>
+          </div>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: "10px",
+              fontSize: "1rem",
+              background: theme.panel,
+              border: "1px solid",
+              borderColor: theme.panelBorder,
+              padding: "12px 20px",
+              borderRadius: "14px",
+              width: "100%",
+              maxWidth: "720px",
+              marginBottom: "12px",
+              cursor: "pointer"
+            }}
+            onClick={() => window.location.href = "/sample-documents"}
+          >
+            <input
+              type="checkbox"
+              id="viewSampleDocs"
+              checked={false}
+              readOnly
+              style={{ accentColor: theme.accent, cursor: "pointer", pointerEvents: "none" }}
+            />
+            <label htmlFor="viewSampleDocs" style={{ color: theme.text, cursor: "pointer" }}>
+              View Sample documents generated by teachwiseai
+            </label>
           </div>
           <div
             style={{
@@ -2721,6 +2715,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                               paddingRight: "8px",
                             }}
                           >
+                            {/* ...existing code... */}
                             <div
                               style={{
                                 display: "flex",
@@ -2762,6 +2757,80 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                     paddingLeft: "26px",
                                   }}
                                 >
+
+                                  {/* Default option always visible below sample checkbox */}
+                                  <label
+                                    style={{
+                                      display: "flex",
+                                      alignItems: "center",
+                                      gap: "8px",
+                                      fontSize: "0.85rem",
+                                      color: theme.isDark ? "#cbd5f5" : "#334155",
+                                      marginBottom: "8px",
+                                    }}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={presentationSettings.includeContentAndImages !== false}
+                                      onChange={(event) =>
+                                        handlePresentationFieldChange(
+                                          gradeConfig.id,
+                                          subject,
+                                          "includeContentAndImages",
+                                          event.target.checked,
+                                        )
+                                      }
+                                      style={{ accentColor: theme.accent }}
+                                    />
+                                    <span>Default - Number of slides with content and images (10 slides with 5 high resolution images will be generated)</span>
+                                  </label>
+                                  {presentationSettings.includeContentAndImages !== false && (
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginLeft: '28px', marginBottom: '8px', maxWidth: '420px' }}>
+                                      <input
+                                        type="text"
+                                        value={presentationSettings.topic || ""}
+                                        onChange={(event) =>
+                                          handlePresentationFieldChange(
+                                            gradeConfig.id,
+                                            subject,
+                                            "topic",
+                                            event.target.value,
+                                          )
+                                        }
+                                        placeholder="Enter presentation topic"
+                                        style={{
+                                          padding: "8px 10px",
+                                          borderRadius: "8px",
+                                          border: "1px solid",
+                                          borderColor: theme.panelBorder,
+                                          background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                          color: theme.text,
+                                          fontSize: "1rem",
+                                          width: "100%",
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        style={{
+                                          marginTop: '2px',
+                                          padding: '8px 18px',
+                                          borderRadius: '8px',
+                                          border: 'none',
+                                          background: theme.accent,
+                                          color: '#fff',
+                                          fontWeight: 600,
+                                          fontSize: '1rem',
+                                          cursor: 'pointer',
+                                          alignSelf: 'flex-start',
+                                          boxShadow: theme.isDark ? '0 1px 4px #0004' : '0 1px 4px #0001',
+                                        }}
+                                        onClick={() => handleGeneratePresentation(gradeConfig.id, subject)}
+                                      >
+                                        Generate
+                                      </button>
+
+                                    </div>
+                                  )}
                                   <label
                                     style={{
                                       display: "flex",
@@ -2786,15 +2855,92 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                     />
                                     Create Presentations with GPTI
                                   </label>
-                                  {presentationSettings.useGPTI ? (
-                                    <div
+                                  {presentationSettings.includeContentAndImages !== false && (
+                                    <input
+                                      type="text"
+                                      value={presentationSettings.topic || ""}
+                                      onChange={(event) =>
+                                        handlePresentationFieldChange(
+                                          gradeConfig.id,
+                                          subject,
+                                          "topic",
+                                          event.target.value,
+                                        )
+                                      }
+                                      placeholder="Enter presentation topic"
                                       style={{
-                                        display: "flex",
-                                        flexDirection: "column",
-                                        gap: "8px",
-                                        paddingLeft: "24px",
+                                        margin: "0 0 12px 28px",
+                                        padding: "8px 10px",
+                                        borderRadius: "8px",
+                                        border: "1px solid",
+                                        borderColor: theme.panelBorder,
+                                        background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                        color: theme.text,
+                                        fontSize: "1rem",
+                                        width: "100%",
+                                        maxWidth: "420px",
                                       }}
-                                    >
+                                    />
+                                  )}
+                                  {presentationSettings.includeContentAndImages !== false && (
+                                    <div style={{ marginLeft: '28px', marginBottom: '8px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', color: theme.isDark ? '#cbd5f5' : '#334155' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={presentationSettings.highResolution || false}
+                                          onChange={e => handlePresentationFieldChange(gradeConfig.id, subject, 'highResolution', e.target.checked)}
+                                          style={{ accentColor: theme.accent }}
+                                        />
+                                        <span>High resolution</span>
+                                      </label>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', color: theme.isDark ? '#cbd5f5' : '#334155' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={presentationSettings.mediumResolution || false}
+                                          onChange={e => handlePresentationFieldChange(gradeConfig.id, subject, 'mediumResolution', e.target.checked)}
+                                          style={{ accentColor: theme.accent }}
+                                        />
+                                        <span>Medium resolution</span>
+                                      </label>
+                                      <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.82rem', color: theme.isDark ? '#cbd5f5' : '#334155' }}>
+                                        <input
+                                          type="checkbox"
+                                          checked={presentationSettings.lowResolution || false}
+                                          onChange={e => handlePresentationFieldChange(gradeConfig.id, subject, 'lowResolution', e.target.checked)}
+                                          style={{ accentColor: theme.accent }}
+                                        />
+                                        <span>Low resolution</span>
+                                      </label>
+                                    </div>
+                                  )}
+                                  {/* GPTI-specific options below */}
+                                  {presentationSettings.useGPTI ? (
+                                    <>
+                                      <input
+                                        type="text"
+                                        value={presentationSettings.gptiTopic}
+                                        onChange={(event) =>
+                                          handlePresentationFieldChange(
+                                            gradeConfig.id,
+                                            subject,
+                                            "gptiTopic",
+                                            event.target.value,
+                                          )
+                                        }
+                                        placeholder="Enter topic for GPTI presentation"
+                                        style={{
+                                          margin: "12px 0 16px 0",
+                                          padding: "8px 10px",
+                                          borderRadius: "8px",
+                                          border: "1px solid",
+                                          borderColor: theme.panelBorder,
+                                          background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                          color: theme.text,
+                                          fontSize: "1rem",
+                                          width: "100%",
+                                          maxWidth: "420px",
+                                        }}
+                                      />
                                       <label
                                         style={{
                                           display: "flex",
@@ -2859,6 +3005,40 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                             color: theme.text,
                                           }}
                                         />
+                                        <label
+                                          style={{
+                                            display: "flex",
+                                            flexDirection: "column",
+                                            gap: "4px",
+                                            fontSize: "0.82rem",
+                                            color: theme.isDark ? "#cbd5f5" : "#334155",
+                                          }}
+                                        >
+                                          <span>Number of slides with images</span>
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={Number.parseInt(presentationSettings.slideCount, 10) || MAX_PRESENTATION_SLIDES}
+                                            value={presentationSettings.imageCount}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "imageCount",
+                                                event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                              )
+                                            }
+                                            placeholder="Enter number of slides with images"
+                                            style={{
+                                              padding: "8px 10px",
+                                              borderRadius: "8px",
+                                              border: "1px solid",
+                                              borderColor: theme.panelBorder,
+                                              background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                              color: theme.text,
+                                            }}
+                                          />
+                                        </label>
                                       </label>
                                       <label
                                         style={{
@@ -2869,29 +3049,151 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           color: theme.isDark ? "#cbd5f5" : "#334155",
                                         }}
                                       >
-                                        <span>Number of slides with images</span>
-                                        <input
-                                          type="number"
-                                          min={0}
-                                          max={Number.parseInt(presentationSettings.slideCount, 10) || MAX_PRESENTATION_SLIDES}
-                                          value={presentationSettings.imageCount}
-                                          onChange={(event) =>
-                                            handlePresentationFieldChange(
-                                              gradeConfig.id,
-                                              subject,
-                                              "imageCount",
-                                              event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
-                                            )
-                                          }
+                                        <label
                                           style={{
-                                            padding: "8px 10px",
-                                            borderRadius: "8px",
-                                            border: "1px solid",
-                                            borderColor: theme.panelBorder,
-                                            background: theme.isDark ? "#0f172a" : "#f8fafc",
-                                            color: theme.text,
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "6px",
+                                            fontSize: "0.82rem",
+                                            color: theme.isDark ? "#cbd5f5" : "#334155",
                                           }}
-                                        />
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={presentationSettings.includeContentOnly || false}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "includeContentOnly",
+                                                event.target.checked,
+                                              )
+                                            }
+                                            style={{ accentColor: theme.accent }}
+                                          />
+                                          <span>Number of slides with content only</span>
+                                        </label>
+                                        {presentationSettings.includeContentOnly && (
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={Number.parseInt(presentationSettings.slideCount, 10) || MAX_PRESENTATION_SLIDES}
+                                            value={presentationSettings.contentOnlyCount}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "contentOnlyCount",
+                                                event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                              )
+                                            }
+                                            placeholder="Enter number of content-only slides"
+                                            style={{
+                                              padding: "8px 10px",
+                                              borderRadius: "8px",
+                                              border: "1px solid",
+                                              borderColor: theme.panelBorder,
+                                              background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                              color: theme.text,
+                                              marginLeft: "22px",
+                                            }}
+                                          />
+                                        )}
+                                      {/* Input for presentation topic */}
+                                      <input
+                                        type="text"
+                                        value={
+                                          presentationSettings.useGPTI
+                                            ? presentationSettings.gptiTopic || ""
+                                            : presentationSettings.useCG
+                                            ? presentationSettings.cgTopic || ""
+                                            : presentationSettings.topic || ""
+                                        }
+                                        onChange={event => {
+                                          const field = presentationSettings.useGPTI
+                                            ? "gptiTopic"
+                                            : presentationSettings.useCG
+                                            ? "cgTopic"
+                                            : "topic";
+                                          handlePresentationFieldChange(
+                                            gradeConfig.id,
+                                            subject,
+                                            field,
+                                            event.target.value,
+                                          );
+                                        }}
+                                        placeholder="Enter presentation topic"
+                                        style={{
+                                          padding: "8px 10px",
+                                          borderRadius: "8px",
+                                          border: "1px solid",
+                                          borderColor: theme.panelBorder,
+                                          background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                          color: theme.text,
+                                          marginLeft: "22px",
+                                          marginTop: "8px",
+                                        }}
+                                      />
+                                      </label>
+                                      <label
+                                        style={{
+                                          display: "flex",
+                                          flexDirection: "column",
+                                          gap: "4px",
+                                          fontSize: "0.82rem",
+                                          color: theme.isDark ? "#cbd5f5" : "#334155",
+                                        }}
+                                      >
+                                        <label
+                                          style={{
+                                            display: "flex",
+                                            alignItems: "center",
+                                            gap: "6px",
+                                            fontSize: "0.82rem",
+                                            color: theme.isDark ? "#cbd5f5" : "#334155",
+                                          }}
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={presentationSettings.includeImageOnly || false}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "includeImageOnly",
+                                                event.target.checked,
+                                              )
+                                            }
+                                            style={{ accentColor: theme.accent }}
+                                          />
+                                          <span>Number of slides with images only</span>
+                                        </label>
+                                        {presentationSettings.includeImageOnly && (
+                                          <input
+                                            type="number"
+                                            min={0}
+                                            max={Number.parseInt(presentationSettings.slideCount, 10) || MAX_PRESENTATION_SLIDES}
+                                            value={presentationSettings.imageOnlyCount}
+                                            onChange={(event) =>
+                                              handlePresentationFieldChange(
+                                                gradeConfig.id,
+                                                subject,
+                                                "imageOnlyCount",
+                                                event.target.value.replace(/[^0-9]/g, "").slice(0, 2),
+                                              )
+                                            }
+                                            placeholder="Enter number of image-only slides"
+                                            style={{
+                                              padding: "8px 10px",
+                                              borderRadius: "8px",
+                                              border: "1px solid",
+                                              borderColor: theme.panelBorder,
+                                              background: theme.isDark ? "#0f172a" : "#f8fafc",
+                                              color: theme.text,
+                                              marginLeft: "22px",
+                                            }}
+                                          />
+                                        )}
                                       </label>
                                       <button
                                         type="button"
@@ -2915,7 +3217,7 @@ export function CbseDashboard({ boardLabel = "CBSE" } = {}) {
                                           ? "Generating..."
                                           : "Generate high res deck"}
                                       </button>
-                                    </div>
+                                    </>
                                   ) : null}
                                   {false && <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                                     <label
