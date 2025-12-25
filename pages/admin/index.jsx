@@ -863,6 +863,57 @@ export default function AdminPage() {
         marginLeft: 'auto',
         marginRight: 'auto',
       }}>
+        <h2 style={{ color: '#38bdf8', marginBottom: 16 }}>Upload Sample Document</h2>
+        <form
+          onSubmit={async e => {
+            e.preventDefault();
+            const fileInput = e.target.elements.sampleDoc;
+            if (fileInput && fileInput.files && fileInput.files[0]) {
+              const file = fileInput.files[0];
+              const filePath = `${Date.now()}_${file.name}`;
+              try {
+                const { data, error } = await supabase.storage
+                  .from('sample-documents')
+                  .upload(filePath, file, {
+                    cacheControl: '3600',
+                    upsert: false,
+                  });
+                if (error) {
+                  alert('Upload failed: ' + error.message);
+                } else {
+                  alert('File uploaded successfully!');
+                }
+              } catch (err) {
+                alert('Unexpected error: ' + err.message);
+              }
+            }
+          }}
+        >
+          <input
+            type="file"
+            id="sampleDoc"
+            name="sampleDoc"
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.jpg,.png,.jpeg,.xls,.xlsx,.csv,.zip"
+            style={{ marginBottom: 16, color: '#e2e8f0' }}
+            required
+          />
+          <br />
+          <button
+            type="submit"
+            style={{
+              padding: '10px 22px',
+              borderRadius: '8px',
+              background: '#38bdf8',
+              color: '#0b1120',
+              fontWeight: 600,
+              fontSize: '1rem',
+              border: 'none',
+              cursor: 'pointer',
+            }}
+          >
+            Upload Document
+          </button>
+        </form>
       </div>
     </div>
   );
